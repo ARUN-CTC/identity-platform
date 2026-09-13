@@ -1,0 +1,117 @@
+# Phase 2 Implementation Plan
+
+Sequenced future implementation, adjusted from the brief's example ordering based on this phase's actual architectural findings — most notably, the global-identity/Membership change (ADR-002) has to land *before* anything product-registration-related, because `Application`/`TenantProductSubscription` reference Tenants that a multi-tenant-capable user model needs to exist first, and before organization-context switching, which is a direct corollary of it.
+
+## Phase 2A — Domain model foundation — **COMPLETE** (see `docs/PHASE_2A.md`)
+- ✅ Migrated `SecurityUser` → global Identity; introduced `Membership` (Identity ↔ Organization) carrying the per-tenant/org status that used to live implicitly on `SecurityUser` (ADR-002).
+- ✅ Global `email` uniqueness; `security_user`'s RLS removed (a global row has no `tenant_id` to filter by — enforcement moved to application-layer joins through `membership`, which keeps RLS).
+- ✅ Forward migration (`database/migrations/20260913120000_global_identity_and_membership.sql`) applied and verified against real (dev) data, plus a from-scratch `db:reset` bootstrap verified independently — both paths tested, both pass.
+- ✅ 10 new e2e tests (`tests/phase2a-membership.e2e-spec.ts`) covering the full authorization/RLS/invitation/negative-security matrix, all against the real database — plus the full pre-existing regression suite (unit + health e2e), typecheck, and build, all still green.
+- ❌ **Not done** (deliberately, out of Phase 2A's scope): the platform-operator principal type (`docs/IDENTITY_DOMAIN_MODEL.md` §6) — still a documented gap, not yet built. Carries forward to a later phase; nothing in Phase 2A depended on it.
+
+## Phase 2B — Product registration — **COMPLETE** (see `docs/PHASE_2B.md`)
+- ✅ `Product`, `Application` tables (no separate `Client` entity — ADR-009), platform-catalog (no `tenant_id`, no RLS — `docs/TRUST_BOUNDARY.md`).
+- ✅ Full admin CRUD (`docs/API_BOUNDARY.md` §7): `POST/GET/GET/PATCH /v1/products`, `POST/GET /v1/products/:id/applications`, `GET/PATCH /v1/applications/:id` — authorized via four new core permissions (`PRODUCT_VIEW`/`PRODUCT_MANAGE`/`APPLICATION_VIEW`/`APPLICATION_MANAGE`, SUPER_ADMIN-only), audited via the existing `SecurityEventsService`.
+- ✅ Client credential generation/hashing (`client_id`/`client_secret`, SHA-256-hashed, shown once) — `src/common/utils/client-credential.util.ts`.
+- ✅ 14 e2e tests (`tests/phase2b-product-registration.e2e-spec.ts`) covering product/application CRUD, duplicate-slug conflict (case-insensitive), unauthorized-access denial, cross-product isolation, secret-handling, and IDOR-style negative tests — all against the real database.
+- ❌ **Not done** (deliberately, out of Phase 2B's scope): `TenantProductSubscription` and `ServiceAccount` — still deferred, no phase assigned to `TenantProductSubscription` yet; `ServiceAccount` remains slotted into Phase 2E below. No `POST /v1/products/{id}/permissions` namespace-registration endpoint either — that's product-*permission* registration (`docs/AUTHORIZATION_ARCHITECTURE.md` §2), a distinct, still-future capability from product/application *identity* registration, which is all Phase 2B was scoped to build.
+
+## Phase 2B.1 — First-Class Platform Operator — **COMPLETE** (see `docs/PHASE_2B1.md`)
+- ✅ `platform_operator`/`platform_operator_permission`/`platform_operator_session`/`platform_operator_refresh_token` — structurally separate from every tenant-scoped table (ADR-010).
+- ✅ Replaced Phase 2B's `SUPER_ADMIN`-as-stand-in for Product/Application administration with real Platform Operator authentication (`PlatformJwtAuthGuard`/`PlatformPermissionsGuard`) — a breaking, tested, documented migration of those two controllers.
+- ✅ `SUPER_ADMIN` migration: existing holders become real Platform Operators (verified against a simulated pre-2B.1 database), `SUPER_ADMIN` itself demoted to an ordinary (broad) tenant-scoped role.
+- ✅ Resolved Phase 2B's audit-attribution known issue (`security_event.scope`).
+- ✅ Last-active-operator protection enforced at the database level, concurrency-tested.
+- ✅ Production bootstrap script (`database/scripts/bootstrap-platform-operator.ts`), idempotent, both paths tested.
+- ✅ 17 new e2e tests + the pre-existing Phase 2A/2B suites updated/passing (42/42 total), unit tests, clean bootstrap, typecheck, build.
+- ❌ **Not done** (deliberately): brand-new-Identity provisioning for Platform Operator creation, a `PlatformRole` convenience layer, `TenantProductSubscription`, `ServiceAccount` — all still deferred, unchanged from Phase 2B's own deferral list.
+
+## Phase 2B.2 — Product Entitlement — **COMPLETE** (see `docs/PHASE_2B2.md`)
+- ✅ `TenantProductEntitlement` — tenant-level (not organization-level; proven sufficient, not assumed — ADR-011), ordinary tenant RLS, `UNIQUE(tenant_id, product_id)`.
+- ✅ `ProductAccessService` — the single, central deny-by-default access decision, Product-status-takes-precedence-over-entitlement-status.
+- ✅ Full lifecycle: `ACTIVE ⇄ SUSPENDED`, `→ REVOKED`, `REVOKED → ACTIVE` only via a dedicated `reactivate` action.
+- ✅ Platform Operator administration (`PRODUCT_ENTITLEMENT_VIEW`/`_MANAGE`) via the existing `actingAsTenantId` RLS pattern — no `BYPASSRLS`, no new mechanism.
+- ✅ Tenant self-service read endpoint with computed eligibility.
+- ✅ Concurrency-tested: duplicate-create race, SUSPEND-vs-REVOKE race (stronger state wins), ACTIVE/SUSPENDED toggle race.
+- ✅ 16 new e2e tests + full 58-test regression (all prior phases) passing, migration verified against a simulated pre-2B.2 database, clean bootstrap, typecheck, build.
+- ❌ **Not done** (deliberately): organization-level entitlement/override (documented extension point, no demonstrated requirement yet), billing/subscriptions/metering (never in scope for this model), any per-product API-boundary callback for `ProductAccessService` (waits on `aud`-checked tokens or service-to-service auth, Phase 2E+).
+
+## Phase 2C — Organization context — **COMPLETE** (see `docs/PHASE_2C.md`)
+- ✅ `POST /v1/auth/context/switch` + `POST /v1/auth/context/clear` (`docs/ORGANIZATION_CONTEXT.md` Option D, now implemented) — wired the already-present-but-unused `SecuritySession.organizationId` field into a real token-reissuance flow, reusing the refresh/rotation pipeline rather than inventing a new one.
+- ✅ `organizationId` claim added to the access token contract, additive/optional (`docs/TOKEN_ARCHITECTURE.md`, `docs/ORGANIZATION_CONTEXT_ARCHITECTURE.md`) — never itself trusted as authorization; `PermissionsGuard`/`UserRolesRepository.resolveGrants()` re-validate Membership + Organization status live, every request.
+- ✅ Cross-tenant discovery without ever trusting a client-supplied `tenantId`: a narrow, read-only, self-visibility RLS carve-out on `membership` (matched only against the caller's own authenticated `current_user_id()` GUC) resolves "which tenant does this organization belong to, for this caller" server-side (ADR-012).
+- ✅ `GET /v1/me/organizations`, `GET /v1/me/context` — new read-only endpoints backing a context switcher.
+- ✅ `organization_context.switched` / `.cleared` / `.denied` / `.cleared_stale` audit events, all correctly tenant-attributed.
+- ✅ 17 new e2e tests + full 75-test regression (all prior phases) passing, migration verified against a simulated pre-2C database, clean bootstrap, typecheck, build.
+- ❌ **Not done** (deliberately, out of Phase 2C's scope): `security_user.current_organization_id` (no compelling reason — per-session state on `SecuritySession` is correct and multi-device-safe, per the brief); organization-level product entitlements/business authorization; OAuth2/OIDC/SAML/MFA/Passkeys/Service Accounts/SDKs/Billing — all untouched.
+
+## Phase 2D — External Application & Service Authentication Architecture — **ARCHITECTURE COMPLETE, GATE-REVIEWED** (see `docs/PHASE_2D_ARCHITECTURE.md` §9)
+
+A dedicated post-design Architecture Gate review resolved 10 explicit gates before implementation readiness was declared, adding ADR-021 (Token Exchange/Impersonation) and refining ADR-017 (HS256 is permanent for the legacy token, never migrated — only the new OAuth token type gets RS256) — see `docs/PHASE_2D_ARCHITECTURE.md` §9 and §10 (Implementation Readiness Matrix, all rows READY).
+
+- ✅ **Sub-phase 2D.1 — Cryptographic Foundation & External Token Trust Boundary — COMPLETE** (see `docs/PHASE_2D1.md`): `SigningKeyService`/`ExternalTokenService` (`src/modules/oauth/`), RS256 sign/verify, `kid`-based key selection, `GET /.well-known/jwks.json`, legacy verifier hardening (`algorithms:['HS256']` pinned). 25 new unit + 8 new e2e tests, 93/93 e2e total, zero DB/migration changes, zero TravelOS changes.
+- ✅ **Sub-phase 2D.2 — Application/OAuth Client Foundation — COMPLETE** (see `docs/PHASE_2D2.md`): `Application` extended (additive migration) with `grantTypes`/`allowedScopes`/`audiences`/`tokenEndpointAuthMethod`; registration/update-time policy enforcement (`src/modules/applications/policies/`: grant-type, scope-namespace, audience, redirect-URI, origin, token-endpoint-auth-method) plus a composed `OAuthApplicationPolicyService` eligibility check; a genuine pre-existing IDOR-adjacent defect found and fixed (`ApplicationsRepository.update()` no longer spreads the raw request DTO — explicit field allow-list, closing a `productId`-reassignment gap that previously relied solely on the global `ValidationPipe`). 78 new unit + 31 new e2e tests, 124/124 e2e total, additive migration verified against a simulated pre-2D.2 state, zero TravelOS changes.
+- ✅ **Sub-phase 2D.3 — ServiceAccount & Tenant Grant Foundation — COMPLETE** (see `docs/PHASE_2D3.md`): `ServiceAccount` (`Application 1───N ServiceAccount`, own hashed credential, one-time plaintext reveal) and `ServiceAccountTenantGrant` (`ServiceAccount → Tenant`, `ACTIVE`/`SUSPENDED`/`REVOKED`, DB-unique-constrained, reactivate-only path back from `REVOKED`) — two new tables, both additive; full `src/modules/service-accounts/` module (repositories, services, controllers), tenant-first nested grant administration (`/platform/tenants/:tenantId/service-account-grants`) deliberately mirroring `TenantProductEntitlement`'s own proven shape rather than inventing a new cross-tenant RLS mechanism; a genuine gap found and fixed during this phase's own concurrency testing (`ServiceAccountsService.create()` initially had no local `P2002` catch, unlike its sibling services — fixed to the same 409-on-conflict discipline). No unit tests added (the CRUD/state-machine services follow this codebase's established e2e-only convention for that class of service) + 20 new e2e tests, 144/144 e2e total, additive migration verified against a simulated pre-2D.3 state, zero TravelOS changes. Client Credentials token issuance itself remains unbuilt — this sub-phase built only the identity/authorization records a future `/token` flow will depend on.
+- ✅ **Sub-phase 2D.4 — OAuth 2.0 Client Credentials Flow — COMPLETE** (see `docs/PHASE_2D4.md`): `POST /oauth/token` (`grant_type=client_credentials` only) — the first endpoint that actually issues an external, RS256-signed access token. Authenticates the Application (`client_secret_basic`, new `verifyClientSecret` timing-safe comparison) and, separately, the specific `ServiceAccount` acting through it (its own `credential_hash`, per Phase 2D.3's actual schema); validates the explicit `tenant_id` assertion against `ServiceAccountTenantGrantsService.isGrantActive()` (Phase 2D.3, reused); validates `TenantProductEntitlement`+`Product` status via `ProductAccessService.canAccess()` (Phase 2B.2, reused unchanged); validates scope/audience via `OAuthApplicationPolicyService.checkEligibility()` (Phase 2D.2, reused unchanged); signs via `ExternalTokenService.sign()` (Phase 2D.1, reused unchanged). Zero new database tables/columns — Product is resolved from the authenticated Application's own existing `productId`, avoiding a speculative new audience-to-product naming convention. RFC 6749-shaped `{error, error_description}` error responses, scoped to this one controller. 13 new unit + 33 new e2e tests, 177/177 e2e total, zero DB/migration changes, zero TravelOS changes.
+- ✅ **Sub-phase 2D.5 — Resource Server JWT Validation & Authorization Context — COMPLETE** (see `docs/PHASE_2D5.md`, `docs/RESOURCE_SERVER_ARCHITECTURE.md`): the reusable, consuming-side Resource Server trust boundary — `extractBearerToken()` (RFC 7617-adjacent extraction), `JwksClientService` (HTTP-fetched, cached, cooldown-protected JWKS resolution, structurally independent of the in-process `SigningKeyService`), `ExternalAccessTokenValidator` (RS256/`kid`/signature/issuer/audience/temporal/required-claim validation → `AuthenticatedExternalPrincipal`), `ExternalBearerAuthGuard`/`@ExpectedAudience` (opt-in, never-global guard, attaches the principal to both the request and a dedicated CLS store), plus `requireScope()`/`assertRequestedTenantMatches()` as optional, product-owned reference helpers. `ResourceServerDemoController` is explicitly-marked test/support infrastructure proving the pipeline end to end, not a product endpoint. Zero database changes — Resource Server validation is a pure read/verify pipeline. One shared-utility extraction (`parseScopeClaim`, used by both Phase 2D.4 issuance and this phase's validation), verified behavior-preserving. 44 new unit + 23 new e2e tests, 200/200 e2e total, zero TravelOS changes. Product-specific IAM/entitlement/scope-policy composition (ADR-020 pipeline steps 8-11) remains deliberately outside the Identity Platform, by design.
+- ✅ **Sub-phase 2D.6 — Product Resource Authorization Contract & Integration Boundary — COMPLETE** (see `docs/PHASE_2D6.md`, `docs/RESOURCE_AUTHORIZATION_CONTRACT.md`): the reusable, product-neutral contract layered on Phase 2D.5's principal — `ResourceAuthorizationPolicy`/`ResourceAuthorizationRequest`/`AuthorizationDecision` (the seam a product implements; Identity Platform ships zero product implementations), `ResourceAuthorizationPolicyRegistry` (in-memory, per-`productId`, no global mutable state), `ResourceAuthorizationGuard` (a genuinely separate second guard — Layer 5 OAuth-scope enforcement generic/built-in, Layers 6-7 product-IAM/resource-policy fully delegated), `@RequireResourceAuthorization` decorator, and an extended scope evaluator (`hasScope`/`requireScopes`/`requireAnyScope`, explicit AND/OR semantics, exact-match only). A genuine architectural finding surfaced and documented transparently: Phase 2D.4's own token issuance already requires product entitlement for the Application's own tied Product, so testing the entitlement layer's independence required a second, issuance-unrelated Product. Zero database changes, zero product-specific permission/resource/action code anywhere in this codebase. 27 new unit + 18 new e2e tests, 217/217 e2e total, zero TravelOS changes.
+- ✅ **Sub-phase 2D.7 — OAuth Authorization Code + PKCE — COMPLETE** (see `docs/PHASE_2D7.md`, `docs/OAUTH_AUTHORIZATION_CODE_PKCE.md`): the human-user counterpart to Phase 2D.4's machine flow — `GET /oauth/authorize` (behind the existing, unmodified `JwtAuthGuard`; never a new login mechanism) issues a single-use, PKCE-bound (`S256` only), tenant-prefixed opaque authorization code (`oauth_authorization_code`, new table, `apply_tenant_rls`); `POST /oauth/token` now also accepts `grant_type=authorization_code` (routed alongside, never modifying, the existing `client_credentials` path) and atomically consumes the code (`AuthorizationCodesRepository.tryConsume` — a conditional `UPDATE`, the actual replay-protection gate) before signing an RS256 human access token carrying an explicit `principal_type: 'USER'` claim (absent ⇒ `SERVICE_ACCOUNT`, so every pre-existing machine token validates unchanged). No OIDC, no ID token, no persistent consent, and — a deliberate, documented limitation — no refresh token (the existing refresh-token system is not safely reusable for this token type without building a second, parallel implementation). 20 new unit + 36 new e2e tests, 254/254 e2e total, zero TravelOS changes, zero product-specific IAM.
+- ⬜ Sub-phases 2D.8–2D.13 (`docs/PHASE_2D_ARCHITECTURE.md` §6) remain unimplemented.
+
+**Reconciliation note**: this entry supersedes this plan's own original, narrower "Phase 2D — Integration API surface" and "Phase 2E — Service authentication" sketches below — both are now subsumed into one comprehensive architecture pass (ADR-013 through ADR-021), since the two were never actually independent (an `aud`/JWKS migration and a client-credentials grant are both facets of the same Authorization Server role). The original two entries are kept, unedited, directly below this note as the historical record of what was originally planned; nothing in them is contradicted, only absorbed and elaborated. Three original Phase 2D items are **not** covered by this architecture pass and remain open, unassigned items on this plan, each entirely unrelated to external/OAuth authentication: `/v1/organizations/{id}/units` (Phase 1's deferred Organization Unit service/controller), the general-purpose `GET /v1/audit/events` read endpoint (`docs/API_BOUNDARY.md` §8 — distinct from the new OAuth-specific audit events this phase's own endpoints would emit), and the OpenAPI spec accuracy pass. Each needs its own future phase slot.
+
+- ✅ Design-only (no implementation, per this phase's own explicit instruction): OAuth 2.1 Authorization Server + OpenID Connect Provider role (ADR-013, ADR-014), additive to the existing proprietary bearer-token API — that API is not replaced or deprecated.
+- ✅ Service-to-service tenant/scope authorization model (ADR-015) — the genuinely new decision ADR-006 (mechanism) never addressed: a valid service credential does not imply universal tenant access; `ServiceAccountTenantGrant` (conceptual, future) is the durable, revocable, per-tenant grant a resource server validates against.
+- ✅ Token/scope model formalized (ADR-016) — `aud`/`iss`/`jti`/`scope` claims designed (not yet added to the real JWT), OAuth scope explicitly separated from IAM permission (`docs/APPLICATION_AUTHORIZATION.md`).
+- ✅ JWT signing migration path formalized (ADR-017) — the HS256-vs-ADR-003's-already-decided-asymmetric-signing gap is explicitly surfaced and given a concrete RS256+JWKS migration design (`docs/KEY_MANAGEMENT_ARCHITECTURE.md`), not silently left unresolved.
+- ✅ Application/Client model reaffirmed (ADR-018) — no split entity; conceptual new attributes (`grantTypes`, `allowedScopes`, `audiences`) identified, not implemented.
+- ✅ Organization Context integration with OAuth flows decided (ADR-019) — a hint parameter only, real validation always re-runs Phase 2C's own existing, hardened chain; no second implementation of it.
+- ✅ Resource-server validation pipeline decided (ADR-020) — local-by-default, live-only-where-genuinely-dynamic (product entitlement), reaffirming `docs/AVAILABILITY_MODEL.md`'s existing trade-off rather than replacing it.
+- ✅ Full threat model (26 threats), trust-boundary diagram, future conceptual data model, and future OAuth/OIDC API surface documented (`docs/PHASE_2D_THREAT_MODEL.md`, `docs/EXTERNAL_API_TRUST_BOUNDARY.md`).
+- ❌ **Not done** (deliberately — this was an architecture-only phase): every OAuth/OIDC/introspection/revocation endpoint, every new table (`ServiceAccount`, `ServiceAccountTenantGrant`, `AuthorizationCode`, `SigningKey`), the RS256 migration itself, MFA, Passkeys, SAML, SCIM, billing, SDKs, a developer portal, any TravelOS/Healthcare/Gym integration work. Actual implementation remains gated on ADR-007's own trigger (a named third-party/delegated-access or enterprise-SSO requirement) and is sequenced in `docs/PHASE_2D_ARCHITECTURE.md` §Implementation Roadmap (2D.1–2D.13) once triggered.
+
+### Original Phase 2D/2E sketch (historical — superseded/absorbed above, not deleted)
+
+## Phase 2D (original) — Integration API surface
+- `aud` claim + JWKS endpoint + asymmetric signing migration (replacing whatever signing Phase 1 shipped with, if it was symmetric).
+- Full endpoint surface from `docs/API_BOUNDARY.md`: `/v1/organizations/{id}/units` (finally implementing Phase 1's deferred Organization Unit service/controller), `/v1/authorize`, `/v1/audit/events`.
+- OpenAPI spec accuracy pass (foundation for Phase 2I).
+
+## Phase 2E (original) — Service authentication
+- OAuth2 client-credentials grant (`POST /v1/oauth/token`), `ServiceAccount` provisioning flow, client-secret rotation runbook (ADR-006).
+- JWT-client-assertion as an optional stronger credential form for higher-sensitivity products.
+
+## Phase 2F — Environment/config hardening
+- Environment-variable validation schema (Phase 1's own carried-forward gap — Joi or `class-validator`-based), closing the "malformed `.env` fails at first use, not at startup" risk noted in `docs/PHASE_2_BASELINE.md`.
+- Secrets-manager integration for signing keys and `client_secret` hashing (`docs/SECURITY_ARCHITECTURE.md` §4).
+
+## Phase 2G — Observability foundation
+- Structured logging + redaction chokepoint (`docs/OBSERVABILITY.md` §3), `request_id`/`trace_id`/`application_id` propagation, split liveness/readiness health checks.
+- No metrics/tracing backend selection here — infra-environment-dependent, out of this plan's scope.
+
+## Phase 2H — OIDC/OAuth2 (conditional, per ADR-007)
+- Only if a named requirement appears: authorization_code + PKCE grant, then OIDC (ID token, discovery document, JWKS already exists from 2D).
+
+## Phase 2I — MFA/Passkeys (conditional)
+- `Credential` model extended for TOTP/WebAuthn factors, `amr` claim, Session `mfa_verified` flag (`docs/AUTHENTICATION_ARCHITECTURE.md` §4) — triggered by a real product/compliance requirement, not built speculatively.
+
+## Phase 2J — Enterprise federation (conditional, per ADR-007/ADR-008)
+- SAML/LDAP/SCIM, or an external IAM engine swap (ADR-008) — only on a named enterprise customer requirement exceeding the in-house roadmap.
+
+## Phase 2K — SDKs
+- OpenAPI-generated clients + hand-written JWT-validation/middleware library, TypeScript first (`docs/SDK_STRATEGY.md`).
+
+## Phase 2L — Production hardening
+- CI/CD pipeline (Phase 1's own carried-forward gap), load/chaos testing of the availability model's claimed guarantees (`docs/AVAILABILITY_MODEL.md`), key-rotation drill, multi-instance deployment.
+
+## Sequencing notes
+
+- 2A blocks 2B and 2C — both need the Identity/Membership shape to exist first, not the tenant-scoped `SecurityUser`.
+- 2D's `aud`/JWKS work should land before or alongside 2B, since `Application` registration is what `aud` actually names.
+- 2E can proceed in parallel with 2C/2D — service auth doesn't depend on organization-context switching.
+- 2F–2G are hygiene, not feature work, and can be interleaved with 2A–2E rather than strictly sequenced after them.
+- 2H/2I/2J are explicitly conditional — they are not "later phases that will happen," they are "decisions already made to defer until triggered" (ADR-007, ADR-008). Do not schedule them on a calendar; schedule the *trigger condition*.
+
+## Explicit non-goals for the immediate implementation phases
+
+No product (TravelOS, Healthcare, Gym) is modified as part of executing this plan — every phase above is entirely inside the `identity-platform` repository. TravelOS remains read-only reference material throughout, per the standing safety rule.

@@ -18,8 +18,11 @@ model Tenant {
   activatedAt DateTime? @map("activated_at") @db.Timestamptz
   suspendedAt DateTime? @map("suspended_at") @db.Timestamptz
 
-  // Identity domain (security.prisma)
-  users               SecurityUser[]
+  // Identity domain (security.prisma). PHASE 2A: no direct `users` relation
+  // any more — SecurityUser is a global Identity with no tenantId
+  // (docs/adr/ADR-002-tenant-organization-model.md). `memberships` is the
+  // actual Identity <-> Tenant link now.
+  memberships         Membership[]
   roles               SecurityRole[]
   userRoles           SecurityUserRole[]
   sessions            SecuritySession[]
@@ -33,6 +36,22 @@ model Tenant {
   organizations               Organization[]
   organizationUnits           OrganizationUnit[]
   organizationUnitHierarchies OrganizationUnitHierarchy[]
+
+  // Phase 2B.2 (docs/PRODUCT_ENTITLEMENT_ARCHITECTURE.md) — which Products
+  // this Tenant is permitted to use. Distinct from `organizations` above —
+  // entitlement is not membership.
+  productEntitlements TenantProductEntitlement[]
+
+  // Phase 2D.3 (docs/SERVICE_AUTHENTICATION_ARCHITECTURE.md) — which
+  // ServiceAccounts (machine principals) are authorized to act on this
+  // Tenant. Distinct from `productEntitlements` above and from
+  // `memberships` — a service grant is neither product entitlement nor
+  // human membership.
+  serviceAccountTenantGrants ServiceAccountTenantGrant[]
+
+  // Phase 2D.7 (docs/OAUTH_AUTHORIZATION_CODE_PKCE.md) — outstanding OAuth
+  // authorization codes issued to a human user of this Tenant.
+  oauthAuthorizationCodes OAuthAuthorizationCode[]
 
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
   createdBy String?   @map("created_by") @db.Uuid

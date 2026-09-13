@@ -4,13 +4,19 @@
 // classified REUSABLE in docs/IDENTITY_SOURCE_INVENTORY.md. No product
 // coupling found in these models themselves (only FK relations to Tenant/
 // Organization, both also extracted).
+//
+// PHASE 2A: SecurityUser is a global Identity (docs/adr/ADR-002-tenant-
+// organization-model.md) — it no longer carries tenantId. A user's
+// relationship to a Tenant/Organization is represented exclusively through
+// Membership, below. See docs/PHASE_2A.md.
 
 model SecurityUser {
-  id       String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  tenantId String @map("tenant_id") @db.Uuid
-  tenant   Tenant @relation(fields: [tenantId], references: [id])
+  id String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
 
-  email    String
+  // Globally unique — this is the whole point of the Phase 2A migration:
+  // one person, one identity, usable across every tenant/organization/
+  // product they have a Membership in. See docs/IDENTITY_DOMAIN_MODEL.md §2.1.
+  email    String  @unique(map: "uk_security_user_email")
   username String?
 
   // Nullable: an admin-invited user (status PROVISIONED) has no password
@@ -28,6 +34,11 @@ model SecurityUser {
   lockedUntil      DateTime? @map("locked_until") @db.Timestamptz
   lastLoginAt      DateTime? @map("last_login_at") @db.Timestamptz
 
+  memberships         Membership[]
+  // Phase 2B.1 (docs/PLATFORM_OPERATOR_ARCHITECTURE.md): at most one
+  // platform_operator row per global Identity — structurally separate from
+  // memberships/userRoles above, never resolved through them.
+  platformOperator    PlatformOperator?
   userRoles           SecurityUserRole[]
   sessions            SecuritySession[]
   refreshTokens       SecurityRefreshToken[]
@@ -35,6 +46,9 @@ model SecurityUser {
   invitationTokens    SecurityUserInvitationToken[]
   loginAttempts       SecurityLoginAttempt[]
   securityEvents      SecurityEvent[]
+  // Phase 2D.7 (docs/OAUTH_AUTHORIZATION_CODE_PKCE.md) — OAuth authorization
+  // codes issued to this human Identity via the authorization_code grant.
+  oauthAuthorizationCodes OAuthAuthorizationCode[]
 
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
   createdBy String?   @map("created_by") @db.Uuid
@@ -44,9 +58,41 @@ model SecurityUser {
   deletedBy String?   @map("deleted_by") @db.Uuid
   version   BigInt    @default(1)
 
-  @@unique([tenantId, email], map: "uk_security_user_email")
-  @@index([tenantId], map: "idx_security_user_tenant")
   @@map("security_user")
+}
+
+// Identity <-> Organization link (docs/IDENTITY_DOMAIN_MODEL.md, ADR-002).
+// This — not SecurityUser.tenantId, which no longer exists — is what makes a
+// user "part of" a Tenant/Organization. tenantId is denormalized from
+// organization.tenant_id purely so RLS/index-friendly tenant-scoped queries
+// don't need a join, exactly the same pattern SecurityUserRole already uses.
+model Membership {
+  id             String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  tenantId       String       @map("tenant_id") @db.Uuid
+  tenant         Tenant       @relation(fields: [tenantId], references: [id])
+  organizationId String       @map("organization_id") @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String       @map("user_id") @db.Uuid
+  user           SecurityUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // INVITED -> ACTIVE <-> SUSPENDED -> REMOVED. Terminal state is modeled as
+  // a status, not deletedAt/deletedBy — a Membership's history (who was a
+  // member, when) is itself an access-relevant audit fact, not something to
+  // soft-delete out of the default query shape.
+  status String @default("ACTIVE")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedAt DateTime? @map("updated_at") @db.Timestamptz
+  updatedBy String?   @map("updated_by") @db.Uuid
+  version   BigInt    @default(1)
+
+  @@unique([userId, organizationId], map: "uk_membership_user_org")
+  @@index([tenantId], map: "idx_membership_tenant")
+  @@index([organizationId], map: "idx_membership_org")
+  @@index([userId], map: "idx_membership_user")
+  @@index([status], map: "idx_membership_status")
+  @@map("membership")
 }
 
 model SecurityRole {
@@ -86,8 +132,14 @@ model SecurityPermission {
   action         String
   description    String?
   isSystem       Boolean @default(true) @map("is_system")
+  // Phase 2B.1: platform-only permissions (PRODUCT_*/APPLICATION_*/
+  // PLATFORM_*) may never be attached to a tenant-scoped Role — enforced at
+  // the DB level (trg_security_role_permission_no_platform_only), not just
+  // here. See docs/adr/ADR-010-platform-operator-security-boundary.md.
+  platformOnly   Boolean @default(false) @map("platform_only")
 
-  rolePermissions SecurityRolePermission[]
+  rolePermissions             SecurityRolePermission[]
+  platformOperatorPermissions PlatformOperatorPermission[]
 
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
   createdBy String?   @map("created_by") @db.Uuid
@@ -117,6 +169,14 @@ model SecurityRolePermission {
   @@map("security_role_permission")
 }
 
+// PHASE 2A: userId now points at a global Identity — this row alone no
+// longer implies "the user belongs to tenantId"; that fact is Membership's
+// job. A grant here is only *effective* when the granted user also holds an
+// ACTIVE Membership in tenantId (for a tenant-wide grant, organizationId
+// NULL) or in this exact organizationId — enforced in
+// UserRolesRepository.resolveGrants(), not by a DB constraint (see
+// docs/PHASE_2A.md, "Known limitations" for why this isn't also a DB-level
+// check in Phase 2A).
 model SecurityUserRole {
   id       String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   tenantId String @map("tenant_id") @db.Uuid
@@ -223,12 +283,17 @@ model SecurityPasswordResetToken {
 
 // Admin-initiated user invitation flow. Mirrors the password-reset token
 // exactly — same hash-only storage, same self-identifying plain token.
+// PHASE 2A: now organization-scoped (organizationId, required) — an
+// invitation onboards a global Identity into one specific Organization's
+// Membership, not "into a tenant" in the abstract (docs/PHASE_2A.md).
 model SecurityUserInvitationToken {
-  id       String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  tenantId String       @map("tenant_id") @db.Uuid
-  tenant   Tenant       @relation(fields: [tenantId], references: [id])
-  userId   String       @map("user_id") @db.Uuid
-  user     SecurityUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id             String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  tenantId       String       @map("tenant_id") @db.Uuid
+  tenant         Tenant       @relation(fields: [tenantId], references: [id])
+  userId         String       @map("user_id") @db.Uuid
+  user           SecurityUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String       @map("organization_id") @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   tokenHash String @unique @map("token_hash")
 
@@ -238,6 +303,7 @@ model SecurityUserInvitationToken {
 
   @@index([tenantId], map: "idx_security_user_invitation_token_tenant")
   @@index([userId], map: "idx_security_user_invitation_token_user")
+  @@index([organizationId], map: "idx_security_user_invitation_token_org")
   @@map("security_user_invitation_token")
 }
 
@@ -263,12 +329,18 @@ model SecurityLoginAttempt {
   @@map("security_login_attempt")
 }
 
+// Phase 2B.1: `scope` distinguishes a PLATFORM-level event (tenantId always
+// NULL, written through the ordinary app connection — see the RLS policy
+// in database/ddl/006_platform_operator.sql) from a TENANT-level one
+// (unchanged behavior). Do not fake a tenantId on a PLATFORM-scope event —
+// see docs/PLATFORM_OPERATOR_ARCHITECTURE.md, "Platform audit model".
 model SecurityEvent {
   id          String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   tenantId    String?       @map("tenant_id") @db.Uuid
   tenant      Tenant?       @relation(fields: [tenantId], references: [id])
   actorUserId String?       @map("actor_user_id") @db.Uuid
   actor       SecurityUser? @relation(fields: [actorUserId], references: [id])
+  scope       String        @default("TENANT")
 
   eventType    String  @map("event_type")
   resourceType String? @map("resource_type")
@@ -284,5 +356,6 @@ model SecurityEvent {
   @@index([tenantId], map: "idx_security_event_tenant")
   @@index([actorUserId], map: "idx_security_event_actor")
   @@index([eventType, createdAt], map: "idx_security_event_type")
+  @@index([scope], map: "idx_security_event_scope")
   @@map("security_event")
 }

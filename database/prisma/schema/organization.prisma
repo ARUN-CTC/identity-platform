@@ -43,8 +43,13 @@ model Organization {
   remarks            String?
 
   units             OrganizationUnit[]
+  memberships       Membership[]
   securityUserRoles SecurityUserRole[]
   securitySessions  SecuritySession[]
+  invitationTokens  SecurityUserInvitationToken[]
+  // Phase 2D.7 (docs/OAUTH_AUTHORIZATION_CODE_PKCE.md) — outstanding OAuth
+  // authorization codes issued under this organization context.
+  oauthAuthorizationCodes OAuthAuthorizationCode[]
 
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
   createdBy String?   @map("created_by") @db.Uuid

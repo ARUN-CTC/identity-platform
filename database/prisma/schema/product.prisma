@@ -1,0 +1,87 @@
+// Product / Application registration — Phase 2B. Platform-level entities:
+// neither carries a tenantId — see database/ddl/005_product.sql and
+// docs/PHASE_2B.md for the full rationale.
+
+model Product {
+  id String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+
+  name String
+  // Uniqueness is enforced at the database level by a case-insensitive
+  // functional index (uk_product_slug ON product(LOWER(slug)) —
+  // database/ddl/005_product.sql) — Prisma's schema language can't express
+  // a functional index, so no @unique is declared here; ProductsRepository
+  // looks up by slug with an explicit case-insensitive query
+  // (`mode: 'insensitive'`) rather than relying on Prisma's own
+  // findUnique() shortcut.
+  slug        String
+  description String?
+  status      String  @default("ACTIVE")
+
+  applications Application[]
+  // Phase 2B.2 — which Tenants are entitled to use this Product.
+  tenantEntitlements TenantProductEntitlement[]
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedAt DateTime? @map("updated_at") @db.Timestamptz
+  updatedBy String?   @map("updated_by") @db.Uuid
+  version   BigInt    @default(1)
+
+  @@index([status], map: "idx_product_status")
+  @@map("product")
+}
+
+// The registered, credentialed consumer of the Identity Platform's API for
+// one Product — also what OAuth/OIDC terminology calls a "client"; Phase 2B
+// treats the two names as one entity (docs/PHASE_2B_DOMAIN_MODEL.md), not
+// two, deliberately rejecting a separate Client layer as unnecessary
+// indirection.
+model Application {
+  id        String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  productId String  @map("product_id") @db.Uuid
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  name String
+
+  clientId         String  @unique @map("client_id")
+  clientSecretHash String? @map("client_secret_hash")
+  clientType       String  @default("CONFIDENTIAL") @map("client_type")
+  status           String  @default("ACTIVE")
+
+  // Reserved for future OAuth2/OIDC use since Phase 2B; enforced starting
+  // Phase 2D.2 by RedirectUriPolicy/OriginPolicy (exact-match allow-lists).
+  redirectUris    String[] @map("redirect_uris")
+  allowedOrigins  String[] @map("allowed_origins")
+
+  // Phase 2D.2 (docs/adr/ADR-018-application-trust-client-types.md) — deny-
+  // by-default OAuth client configuration allow-lists. See
+  // docs/APPLICATION_AUTHORIZATION.md and src/modules/applications/policies.
+  grantTypes             String[] @map("grant_types")
+  allowedScopes          String[] @map("allowed_scopes")
+  audiences              String[] @map("audiences")
+  tokenEndpointAuthMethod String  @default("client_secret_basic") @map("token_endpoint_auth_method")
+
+  secretCreatedAt DateTime? @map("secret_created_at") @db.Timestamptz
+  secretRevokedAt DateTime? @map("secret_revoked_at") @db.Timestamptz
+
+  // Phase 2D.3 (docs/SERVICE_AUTHENTICATION_ARCHITECTURE.md) — one
+  // Application may own many ServiceAccounts (machine principals),
+  // docs/PRODUCT_REGISTRATION.md §2.4/§3's own `Application 1───N ServiceAccount`.
+  serviceAccounts ServiceAccount[]
+
+  // Phase 2D.7 (docs/OAUTH_AUTHORIZATION_CODE_PKCE.md) — outstanding
+  // (not-yet-redeemed or already-consumed/expired) authorization codes
+  // issued to this Application via the authorization_code grant.
+  authorizationCodes OAuthAuthorizationCode[]
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedAt DateTime? @map("updated_at") @db.Timestamptz
+  updatedBy String?   @map("updated_by") @db.Uuid
+  version   BigInt    @default(1)
+
+  @@unique([productId, name], map: "uk_application_product_name")
+  @@index([productId], map: "idx_application_product")
+  @@index([status], map: "idx_application_status")
+  @@map("application")
+}

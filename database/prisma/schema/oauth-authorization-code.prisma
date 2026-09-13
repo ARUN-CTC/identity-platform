@@ -1,0 +1,79 @@
+// Phase 2D.7 — OAuth Authorization Code (docs/PHASE_2D7.md,
+// docs/OAUTH_AUTHORIZATION_CODE_PKCE.md). A single-use, short-lived,
+// server-issued artifact binding a human user's authorization decision to
+// the exact client/redirect/PKCE/scope/audience/organization context it was
+// issued under (docs/OAUTH_ARCHITECTURE.md §5) — never itself a bearer
+// credential; it authorizes exactly one `/token` exchange, never a resource
+// request directly.
+//
+// TENANT-scoped (ordinary apply_tenant_rls, same as
+// service_account_tenant_grant) — every access to this table is always made
+// with an explicit, already-known tenantId: at issuance it is the
+// authenticated session's own (trusted) tenantId; at redemption it is
+// parsed from the code's own opaque prefix BEFORE the row is looked up
+// (TokenService.generateAuthorizationCode/parseAuthorizationCode reuse the
+// exact tenantId-prefixed-opaque-value + SHA-256-hash-only-storage
+// convention already established by SecurityRefreshToken/
+// SecurityPasswordResetToken/SecurityUserInvitationToken — see those
+// models). This means the acting tenant is never a client-suppliable
+// parameter at `/token` — there is structurally no channel for "use tenant
+// A's code against tenant B."
+//
+// Never exposed through any tenant-facing CRUD endpoint — its repository
+// (AuthorizationCodesRepository, src/modules/oauth/repositories) has
+// exactly three narrow methods: create, findByCodeHash, tryConsume. No
+// general update/list/delete path exists.
+model OAuthAuthorizationCode {
+  id String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+
+  // Only a SHA-256 hash of the code's random secret is ever persisted — see
+  // this model's own doc comment.
+  codeHash String @unique @map("code_hash")
+
+  applicationId String      @map("application_id") @db.Uuid
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  userId String       @map("user_id") @db.Uuid
+  user   SecurityUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  // The session's validated organization-context selection at the moment
+  // this code was issued — null means tenant-wide. Carried, never
+  // recomputed, at token exchange — a `/token` request has no
+  // organization_id parameter of its own (docs/OAUTH_AUTHORIZATION_CODE_PKCE.md §11).
+  organizationId String?       @map("organization_id") @db.Uuid
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  // Exact string bound at issuance — re-checked byte-for-byte at exchange,
+  // never re-validated against the Application's allow-list a second time
+  // (docs/OAUTH_ARCHITECTURE.md §4/§5).
+  redirectUri String @map("redirect_uri")
+
+  // The single resource-API audience this code (and the token it produces)
+  // is bound to — never re-requested at `/token`
+  // (docs/TOKEN_AND_SCOPE_ARCHITECTURE.md §6).
+  audience String
+
+  // Requested == approved == issued scopes — no persistent consent
+  // subsystem exists yet; first-party trusted applications skip an
+  // explicit consent screen (docs/OAUTH_ARCHITECTURE.md §7). Never IAM
+  // permission (docs/APPLICATION_AUTHORIZATION.md §1).
+  scopes String[] @default([])
+
+  // PKCE (RFC 7636). Only S256 is ever persisted — enforced at issuance by
+  // AuthorizeService and, defense-in-depth, by a DB CHECK constraint
+  // (database/ddl/010_oauth_authorization_code.sql).
+  codeChallenge       String @map("code_challenge")
+  codeChallengeMethod String @default("S256") @map("code_challenge_method")
+
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz
+
+  @@index([expiresAt], map: "idx_oauth_authorization_code_expires_at")
+  @@index([applicationId], map: "idx_oauth_authorization_code_application")
+  @@index([tenantId], map: "idx_oauth_authorization_code_tenant")
+  @@map("oauth_authorization_code")
+}
