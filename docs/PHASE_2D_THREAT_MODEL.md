@@ -100,3 +100,22 @@ one would still fail signature verification, unchanged from #1's own
 model). Also confirms **#26** (enumeration) is unextended by the new
 `src/contracts/` facade — it re-exports existing, already-reviewed error
 codes and adds none.
+
+## Phase 2D.11 implementation status
+
+Full production-readiness/resilience validation pass (`docs/PHASE_2D11.md`,
+`docs/PRODUCTION_READINESS.md`) — no new threat surface, no protocol
+change. Confirms, against the live database, that `identity_app` remains
+`NOBYPASSRLS` and that RLS is enabled AND FORCED on every checked
+tenant-scoped table (**re-verifies #2/#3**, tenant isolation). A NEW
+finding, orthogonal to every existing numbered threat: three
+check-then-insert races (`Tenant`/`Product`/`User` creation) could
+previously surface an unhandled 500 instead of a 409 under concurrent
+duplicate requests — a data-integrity/availability defect, not a
+tenant-isolation or authentication/authorization bypass, and not
+previously numbered here; fixed this phase, verified by a direct
+concurrency test. Confirms `AllExceptionsFilter`'s P2002 mapping must
+**never** be registered globally, as doing so would re-wrap every
+OAuth/OIDC/resource-server `HttpException` into this platform's generic
+response envelope, breaking the frozen RFC 6749/6750 wire contract — an
+explicit, documented architectural decision, not an oversight.

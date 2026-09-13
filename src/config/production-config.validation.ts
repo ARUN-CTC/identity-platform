@@ -22,7 +22,15 @@
 
 const PLACEHOLDER_ISSUER = 'https://identity.example.com';
 
-/** Every numeric OAuth/OIDC/rate-limit env var this platform reads — validated (if present) regardless of environment: a malformed number is never valid, in any environment. */
+/** The exact `.env.example` placeholder — never a real secret, never valid in production. */
+const PLACEHOLDER_JWT_ACCESS_SECRET = 'replace-with-a-real-secret-min-32-chars';
+
+/** The exact `.env.example` placeholder password — a strong signal this is still the untouched local-dev template, never a real production database. */
+const PLACEHOLDER_DATABASE_PASSWORD = 'changeme';
+
+const MIN_JWT_ACCESS_SECRET_LENGTH = 32;
+
+/** Every numeric OAuth/OIDC/rate-limit/session/token-lifetime env var this platform reads — validated (if present) regardless of environment: a malformed number is never valid, in any environment. */
 const NUMERIC_ENV_VARS = [
   'OAUTH_CLOCK_SKEW_SECONDS',
   'OAUTH_JWKS_MIN_REFRESH_INTERVAL_MS',
@@ -33,7 +41,39 @@ const NUMERIC_ENV_VARS = [
   'OAUTH_TOKEN_RATE_LIMIT_WINDOW_MS',
   'OIDC_USERINFO_RATE_LIMIT_MAX',
   'OIDC_USERINFO_RATE_LIMIT_WINDOW_MS',
+  // Phase 2D.11 (docs/PRODUCTION_READINESS.md §Configuration) — the legacy
+  // (HS256) session/token lifetimes were never validated by this function
+  // before this phase, despite being just as capable of a malformed-value
+  // boot-time surprise as the OAuth ones above.
+  'JWT_ACCESS_TOKEN_TTL',
+  'JWT_REFRESH_TOKEN_TTL',
+  'JWT_REFRESH_TOKEN_TTL_SHORT',
+  'PLATFORM_ACCESS_TOKEN_TTL',
+  'PLATFORM_REFRESH_TOKEN_TTL',
+  'USER_INVITATION_TOKEN_TTL_HOURS',
+  'PASSWORD_RESET_TOKEN_TTL_HOURS',
 ] as const;
+
+/**
+ * Phase 2D.11 — a small set of SECURITY-SENSITIVE numeric values additionally
+ * get an upper bound, not merely "positive" (brief §5: "Unsafe TTL: FAIL
+ * CLOSED", "Unsafe clock skew: FAIL CLOSED"). Deliberately NOT applied to
+ * every value in `NUMERIC_ENV_VARS` above — a long "remember me" refresh
+ * token lifetime (`JWT_REFRESH_TOKEN_TTL`, default 30 days) is a legitimate
+ * product/UX decision, not a security defect, and this function must not
+ * silently encode an opinion about it. Only values whose EXCESSIVE size
+ * itself directly widens an attack window get a ceiling here.
+ */
+const MAX_BOUNDED_ENV_VARS: Record<string, number> = {
+  // A clock-skew tolerance this large would materially weaken expiry/nbf
+  // enforcement — 5 minutes is already generous for real clock drift.
+  OAUTH_CLOCK_SKEW_SECONDS: 300,
+  // This platform's own design target is "≤60 seconds" (docs/OAUTH_ARCHITECTURE.md
+  // §5); 600 seconds (10 minutes) is a generous upper bound that still
+  // catches a genuinely misconfigured, replay-window-widening value (e.g.
+  // a code that lives for a day).
+  OAUTH_AUTHORIZATION_CODE_TTL_SECONDS: 600,
+};
 
 export class InvalidProductionConfigurationError extends Error {}
 
@@ -54,6 +94,10 @@ export function validateProductionConfig(config: Record<string, unknown>): Recor
     if (!Number.isFinite(value) || value <= 0) {
       throw new InvalidProductionConfigurationError(`${key} must be a positive number if set (got: ${String(raw)})`);
     }
+    const max = MAX_BOUNDED_ENV_VARS[key];
+    if (max !== undefined && value > max) {
+      throw new InvalidProductionConfigurationError(`${key} must not exceed ${max} (got: ${String(raw)}) — an excessively large value here widens a security-relevant time window`);
+    }
   }
 
   if (config['APP_ENV'] === 'production') {
@@ -69,6 +113,42 @@ export function validateProductionConfig(config: Record<string, unknown>): Recor
       // very first moment of boot, from the same validation pass as every
       // other production-config check, not a second, separately-timed one.
       throw new InvalidProductionConfigurationError('OAUTH_PRIVATE_KEY must be set in production — refusing to start with an auto-generated ephemeral signing key.');
+    }
+
+    // Phase 2D.11 — the legacy HS256 secret had NO production check at all
+    // before this phase: an unset/placeholder value previously surfaced
+    // only as a cryptic jsonwebtoken runtime error on the first login
+    // attempt, not a clear boot-time failure. Never logs the actual value.
+    const jwtSecret = typeof config['JWT_ACCESS_SECRET'] === 'string' ? config['JWT_ACCESS_SECRET'] : undefined;
+    if (!jwtSecret || jwtSecret === PLACEHOLDER_JWT_ACCESS_SECRET) {
+      throw new InvalidProductionConfigurationError('JWT_ACCESS_SECRET must be set to a real secret in production — refusing to start unset or left as the example placeholder.');
+    }
+    if (jwtSecret.length < MIN_JWT_ACCESS_SECRET_LENGTH) {
+      throw new InvalidProductionConfigurationError(`JWT_ACCESS_SECRET must be at least ${MIN_JWT_ACCESS_SECRET_LENGTH} characters in production (got a ${jwtSecret.length}-character value).`);
+    }
+
+    // Phase 2D.11 — DATABASE_URL was never checked for the untouched local-
+    // dev template password. Never logs the connection string itself (which
+    // may embed the real password) — only whether the ONE known example
+    // password substring is present.
+    const databaseUrl = typeof config['DATABASE_URL'] === 'string' ? config['DATABASE_URL'] : undefined;
+    if (!databaseUrl) {
+      throw new InvalidProductionConfigurationError('DATABASE_URL must be set in production.');
+    }
+    if (databaseUrl.includes(`:${PLACEHOLDER_DATABASE_PASSWORD}@`)) {
+      throw new InvalidProductionConfigurationError("DATABASE_URL still contains the local-development example password ('changeme') — refusing to start against what looks like an untouched template.");
+    }
+
+    // Phase 2D.11 (docs/PRODUCTION_READINESS.md §Configuration) — `main.ts`
+    // reflects any origin when this is unset, appropriate only for local
+    // development. A production deployment must name its actual product
+    // origins explicitly.
+    const corsOrigins = typeof config['CORS_ALLOWED_ORIGINS'] === 'string' ? config['CORS_ALLOWED_ORIGINS'].trim() : '';
+    if (!corsOrigins) {
+      throw new InvalidProductionConfigurationError('CORS_ALLOWED_ORIGINS must be set to an explicit, comma-separated origin list in production — refusing to start with the "allow any origin" development default.');
+    }
+    if (corsOrigins.includes('*')) {
+      throw new InvalidProductionConfigurationError("CORS_ALLOWED_ORIGINS must not contain a wildcard ('*') in production.");
     }
   }
 

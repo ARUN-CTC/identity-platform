@@ -7,6 +7,7 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ClsMiddleware } from 'nestjs-cls';
 import { AppModule } from './app.module';
+import { parseCorsAllowedOrigins } from './config/cors.config';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -15,12 +16,27 @@ async function bootstrap() {
   // Applied directly (not via ClsModule's auto-mount) so it's guaranteed to
   // run before Nest's router — same proven pattern this was extracted from.
   app.use(new ClsMiddleware().use);
-  app.enableCors();
+  // Phase 2D.11 (docs/PRODUCTION_READINESS.md §Configuration) — previously
+  // `app.enableCors()` with no options at all, meaning EVERY origin was
+  // reflected and allowed unconditionally, in every environment including
+  // production. `CORS_ALLOWED_ORIGINS` (comma-separated) now gates this:
+  // unset means "reflect any origin" (harmless in local development, and
+  // the previous, unchanged default for it), but `validateProductionConfig`
+  // (Phase 2D.9/2D.11) refuses to boot in production without it explicitly
+  // set — this app never relies on cookies for authentication (bearer
+  // tokens only, verified by source review), so this is a defense-in-depth
+  // reduction of API surface exposed to arbitrary browser-script origins,
+  // not a fix for a credentialed-cookie CSRF-class defect that does not
+  // exist here.
+  const allowedOrigins = parseCorsAllowedOrigins(process.env.CORS_ALLOWED_ORIGINS);
+  app.enableCors(allowedOrigins ? { origin: allowedOrigins } : undefined);
   // '.well-known/jwks.json' (Phase 2D.1) and '.well-known/openid-configuration'
   // (Phase 2D.8) must resolve at their standard, spec-required paths —
-  // never under the versioned /api/v1 prefix, the same reason 'health' is
-  // excluded.
-  app.setGlobalPrefix('api/v1', { exclude: ['health', '.well-known/jwks.json', '.well-known/openid-configuration'] });
+  // never under the versioned /api/v1 prefix, the same reason 'health' (and,
+  // Phase 2D.11, its 'health/live'/'health/ready' siblings — an orchestrator
+  // probing liveness/readiness should never need to know this API's own
+  // version prefix) is excluded.
+  app.setGlobalPrefix('api/v1', { exclude: ['health', 'health/(.*)', '.well-known/jwks.json', '.well-known/openid-configuration'] });
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
