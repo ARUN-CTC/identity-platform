@@ -84,3 +84,19 @@ discipline**: `/userinfo` now records `OIDC_USERINFO_ACCESSED`/
 phase); every OAuth/OIDC audit event now additionally carries a
 correlation id, verified never to itself leak a secret/token/code/nonce
 and never to influence the underlying authorization decision.
+
+## Phase 2D.10 implementation status
+
+No new threat surface — Phase 2D.10 (`docs/PHASE_2D10.md`) is a naming/
+documentation/facade phase over the already-modeled pipeline, adding no
+new endpoint, claim, grant, or trust decision. One review specifically
+performed for this phase, closing a possible instance of **#8 (audience
+confusion)**: confirmed by direct source review that `aud` is a single
+string at every token-signing call site in this codebase
+(`ExternalTokenService.sign()`, `IdTokenService.sign()`) — no multi-value/
+array `aud` is ever produced, so a wildcard- or multi-audience-shaped
+token cannot originate from this platform's own issuance path (a forged
+one would still fail signature verification, unchanged from #1's own
+model). Also confirms **#26** (enumeration) is unextended by the new
+`src/contracts/` facade — it re-exports existing, already-reviewed error
+codes and adds none.

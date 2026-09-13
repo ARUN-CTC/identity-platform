@@ -99,3 +99,7 @@ OIDC is now layered additively on this document's own §2 flow, exactly as antic
 ## 12. Implementation status (Phase 2D.9, `docs/PHASE_2D9.md`, `docs/OAUTH_OPERATIONAL_HARDENING.md`)
 
 Purely operational hardening — no change to this document's own flow, redirect-URI policy, PKCE requirement, or client authentication. `/authorize` and `/token` are now rate-limited (`RateLimitGuard`, provider-neutral, in-process by default) and every field bounded (`@MaxLength`), both enforced BEFORE this document's own validation logic ever runs. See `docs/OAUTH_OPERATIONAL_HARDENING.md` for the full detail.
+
+## 13. Implementation status (Phase 2D.10, `docs/PHASE_2D10.md`, `docs/PRODUCT_INTEGRATION_CONTRACT.md`)
+
+No change to this document's own flow. §6 (client authentication)/§7 (consent) are now additionally named, unchanged, as part of the product-facing service-to-service and human-application contracts (`docs/PRODUCT_INTEGRATION_CONTRACT.md` §6-§7). `IdentityTokenEndpointErrorCode` (`src/contracts/identity-error.contract.ts`) re-exports this platform's existing `OAuthTokenErrorCode` union as the stable, product-facing name for this endpoint's own error vocabulary — no new code, no rename.

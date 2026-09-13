@@ -66,3 +66,7 @@ Everything else — the `openid` scope trigger, `nonce` mechanics, ID Token vs. 
 ## 11. Implementation status (Phase 2D.9, `docs/PHASE_2D9.md`, `docs/OAUTH_OPERATIONAL_HARDENING.md`)
 
 `/userinfo` is now rate-limited and, closing a Phase 2D.8 gap, now records a durable audit event on both success (`OIDC_USERINFO_ACCESSED`) and denial (`OIDC_USERINFO_DENIED`) — no change to §6's own authentication/claim-release logic. See `docs/OAUTH_OPERATIONAL_HARDENING.md` for the full detail.
+
+## 12. Implementation status (Phase 2D.10, `docs/PHASE_2D10.md`, `docs/PRODUCT_INTEGRATION_CONTRACT.md`, `docs/IDENTITY_EXTERNAL_API_CONTRACT.md`)
+
+No change to this document's own design. §2 (ID Token vs. Access Token) and §6 (`/userinfo`) are now restated, unchanged, as the product-facing wire contract (`docs/IDENTITY_EXTERNAL_API_CONTRACT.md` §3-4, §7) and the OIDC portion of the human application contract (`docs/PRODUCT_INTEGRATION_CONTRACT.md` §7-§8). §7 (Discovery document) is now also the documented versioning anchor — every advertised endpoint stays at its spec-fixed or `/api/v1`-prefixed path per `docs/IDENTITY_EXTERNAL_API_CONTRACT.md` §1/§2.

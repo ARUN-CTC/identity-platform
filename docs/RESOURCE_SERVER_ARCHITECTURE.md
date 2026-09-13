@@ -163,3 +163,7 @@ Authorization Code, PKCE, OIDC login, `/userinfo`, MFA, Passkeys, SAML, Dynamic 
 ## 23. Implementation status (Phase 2D.9, `docs/PHASE_2D9.md`, `docs/OAUTH_OPERATIONAL_HARDENING.md`)
 
 `extractBearerToken` (`src/modules/resource-server/utils/bearer-token.util.ts`) now rejects a raw `Authorization` header value over 8192 characters BEFORE the JWT-shape regex even runs — a pure resource-consumption bound, no change to any acceptance/rejection decision this document already describes for a well-formed header. JWKS operational resilience (caching, cooldown, in-flight deduplication, atomic cache swap, malformed-entry isolation, public-key-only exposure) was reviewed against Phase 2D.9's own 10-point checklist and found already fully correct — no code change was needed (`docs/OAUTH_OPERATIONAL_HARDENING.md` §8).
+
+## 24. Implementation status (Phase 2D.10, `docs/PHASE_2D10.md`, `docs/PRODUCT_INTEGRATION_CONTRACT.md`)
+
+`AuthenticatedExternalPrincipal` is now additionally reachable as `IdentityPrincipal` (a type alias, `src/contracts/identity-principal.contract.ts`) — the stable, product-facing name `docs/IDENTITY_EXTERNAL_API_CONTRACT.md` §3 documents. No field added, removed, or renamed on the interface itself; `resource-server/interfaces/` remains its one source of truth. §22's `ExternalAccessTokenValidator` audience-single-value invariant was directly source-reviewed this phase and confirmed to hold at every signing call site (`docs/PHASE_2D_THREAT_MODEL.md` §Phase 2D.10 implementation status).
