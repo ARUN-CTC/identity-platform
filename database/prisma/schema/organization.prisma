@@ -1,0 +1,145 @@
+// Organization domain Prisma models.
+// Phase 1 extracted source — trimmed from TravelOS
+// (packages/database/prisma/schema/organization.prisma). Dropped:
+// Organization.currencyId/languageId/timezoneId (TravelOS Foundation
+// domain, not extracted) and OrganizationUnit.costCenterId/workingHours/
+// holidayCalendarAssignments (TravelOS operations/finance domains, not
+// extracted). See docs/TRAVELOS_COUPLING.md.
+
+model OrganizationType {
+  id          String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  typeCode    String  @unique @map("type_code")
+  typeName    String  @map("type_name")
+  description String?
+  isActive    Boolean @default(true) @map("is_active")
+
+  organizations Organization[]
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedAt DateTime? @map("updated_at") @db.Timestamptz
+  updatedBy String?   @map("updated_by") @db.Uuid
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+  deletedBy String?   @map("deleted_by") @db.Uuid
+  version   BigInt    @default(1)
+
+  @@index([typeName], map: "idx_org_type_name")
+  @@map("organization_type")
+}
+
+model Organization {
+  id                 String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  tenantId           String           @map("tenant_id") @db.Uuid
+  tenant             Tenant           @relation(fields: [tenantId], references: [id])
+  organizationTypeId String           @map("organization_type_id") @db.Uuid
+  organizationType   OrganizationType @relation(fields: [organizationTypeId], references: [id])
+  organizationCode   String           @map("organization_code")
+  organizationName   String           @map("organization_name")
+  legalName          String?          @map("legal_name")
+  email              String?
+  phone              String?
+  website            String?
+  status             String           @default("ACTIVE")
+  remarks            String?
+
+  units             OrganizationUnit[]
+  securityUserRoles SecurityUserRole[]
+  securitySessions  SecuritySession[]
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedAt DateTime? @map("updated_at") @db.Timestamptz
+  updatedBy String?   @map("updated_by") @db.Uuid
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+  deletedBy String?   @map("deleted_by") @db.Uuid
+  version   BigInt    @default(1)
+
+  @@unique([tenantId, organizationCode], map: "uk_org_code")
+  @@index([tenantId], map: "idx_org_tenant")
+  @@index([organizationTypeId], map: "idx_org_type")
+  @@index([status], map: "idx_org_status")
+  @@map("organization")
+}
+
+model OrganizationUnitType {
+  id             String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  typeCode       String  @unique @map("type_code")
+  typeName       String  @map("type_name")
+  hierarchyLevel Int     @map("hierarchy_level")
+  allowChildren  Boolean @default(true) @map("allow_children")
+  isActive       Boolean @default(true) @map("is_active")
+
+  units OrganizationUnit[]
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedAt DateTime? @map("updated_at") @db.Timestamptz
+  updatedBy String?   @map("updated_by") @db.Uuid
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+  deletedBy String?   @map("deleted_by") @db.Uuid
+  version   BigInt    @default(1)
+
+  @@index([hierarchyLevel], map: "idx_org_unit_type_level")
+  @@map("organization_unit_type")
+}
+
+model OrganizationUnit {
+  id                     String               @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  tenantId               String               @map("tenant_id") @db.Uuid
+  tenant                 Tenant               @relation(fields: [tenantId], references: [id])
+  organizationId         String               @map("organization_id") @db.Uuid
+  organization           Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationUnitTypeId String               @map("organization_unit_type_id") @db.Uuid
+  organizationUnitType   OrganizationUnitType @relation(fields: [organizationUnitTypeId], references: [id])
+  unitCode               String               @map("unit_code")
+  unitName               String               @map("unit_name")
+  description            String?
+  managerUserId          String?              @map("manager_user_id") @db.Uuid
+  parentUnitId           String?              @map("parent_unit_id") @db.Uuid
+  parentUnit             OrganizationUnit?    @relation("OrganizationUnitParent", fields: [parentUnitId], references: [id])
+  childUnits             OrganizationUnit[]   @relation("OrganizationUnitParent")
+  email                  String?
+  phone                  String?
+  displayOrder           Int                  @default(1) @map("display_order")
+  status                 String               @default("ACTIVE")
+  remarks                String?
+
+  ancestorHierarchies   OrganizationUnitHierarchy[] @relation("OrganizationUnitHierarchyAncestor")
+  descendantHierarchies OrganizationUnitHierarchy[] @relation("OrganizationUnitHierarchyDescendant")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedAt DateTime? @map("updated_at") @db.Timestamptz
+  updatedBy String?   @map("updated_by") @db.Uuid
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+  deletedBy String?   @map("deleted_by") @db.Uuid
+  version   BigInt    @default(1)
+
+  @@unique([organizationId, unitCode], map: "uk_unit_code")
+  @@index([tenantId], map: "idx_unit_tenant")
+  @@index([organizationId], map: "idx_unit_org")
+  @@index([organizationUnitTypeId], map: "idx_unit_type")
+  @@index([parentUnitId], map: "idx_unit_parent")
+  @@index([managerUserId], map: "idx_unit_manager")
+  @@index([status], map: "idx_unit_status")
+  @@map("organization_unit")
+}
+
+// Closure table: composite PK, no surrogate id.
+model OrganizationUnitHierarchy {
+  ancestorUnitId   String           @map("ancestor_unit_id") @db.Uuid
+  ancestorUnit     OrganizationUnit @relation("OrganizationUnitHierarchyAncestor", fields: [ancestorUnitId], references: [id], onDelete: Cascade)
+  descendantUnitId String           @map("descendant_unit_id") @db.Uuid
+  descendantUnit   OrganizationUnit @relation("OrganizationUnitHierarchyDescendant", fields: [descendantUnitId], references: [id], onDelete: Cascade)
+  hierarchyDepth   Int              @map("hierarchy_depth")
+  tenantId         String           @map("tenant_id") @db.Uuid
+  tenant           Tenant           @relation(fields: [tenantId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@id([ancestorUnitId, descendantUnitId], map: "pk_org_hierarchy")
+  @@index([descendantUnitId], map: "idx_hierarchy_descendant")
+  @@index([hierarchyDepth], map: "idx_hierarchy_depth")
+  @@index([tenantId], map: "idx_hierarchy_tenant")
+  @@map("organization_unit_hierarchy")
+}

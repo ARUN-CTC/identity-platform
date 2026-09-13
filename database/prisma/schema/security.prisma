@@ -1,0 +1,288 @@
+// Security (IAM) domain Prisma models.
+// Phase 1 extracted source — copied from TravelOS
+// (packages/database/prisma/schema/security.prisma) essentially verbatim;
+// classified REUSABLE in docs/IDENTITY_SOURCE_INVENTORY.md. No product
+// coupling found in these models themselves (only FK relations to Tenant/
+// Organization, both also extracted).
+
+model SecurityUser {
+  id       String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  email    String
+  username String?
+
+  // Nullable: an admin-invited user (status PROVISIONED) has no password
+  // until they complete the invitation flow and set one themselves.
+  passwordHash      String?   @map("password_hash")
+  passwordChangedAt DateTime? @map("password_changed_at") @db.Timestamptz
+
+  firstName String? @map("first_name")
+  lastName  String? @map("last_name")
+
+  status String @default("PROVISIONED")
+
+  emailVerifiedAt  DateTime? @map("email_verified_at") @db.Timestamptz
+  failedLoginCount Int       @default(0) @map("failed_login_count")
+  lockedUntil      DateTime? @map("locked_until") @db.Timestamptz
+  lastLoginAt      DateTime? @map("last_login_at") @db.Timestamptz
+
+  userRoles           SecurityUserRole[]
+  sessions            SecuritySession[]
+  refreshTokens       SecurityRefreshToken[]
+  passwordResetTokens SecurityPasswordResetToken[]
+  invitationTokens    SecurityUserInvitationToken[]
+  loginAttempts       SecurityLoginAttempt[]
+  securityEvents      SecurityEvent[]
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedAt DateTime? @map("updated_at") @db.Timestamptz
+  updatedBy String?   @map("updated_by") @db.Uuid
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+  deletedBy String?   @map("deleted_by") @db.Uuid
+  version   BigInt    @default(1)
+
+  @@unique([tenantId, email], map: "uk_security_user_email")
+  @@index([tenantId], map: "idx_security_user_tenant")
+  @@map("security_user")
+}
+
+model SecurityRole {
+  id       String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  tenantId String? @map("tenant_id") @db.Uuid
+  tenant   Tenant? @relation(fields: [tenantId], references: [id])
+
+  roleCode    String  @map("role_code")
+  roleName    String  @map("role_name")
+  description String?
+  isSystem    Boolean @default(false) @map("is_system")
+
+  rolePermissions SecurityRolePermission[]
+  userRoles       SecurityUserRole[]
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedAt DateTime? @map("updated_at") @db.Timestamptz
+  updatedBy String?   @map("updated_by") @db.Uuid
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+  deletedBy String?   @map("deleted_by") @db.Uuid
+  version   BigInt    @default(1)
+
+  // Actual DB-level uniqueness is two PARTIAL unique indexes (see
+  // database/ddl/003_security.sql) — Prisma's schema language can't express
+  // a WHERE predicate on @@unique, so this annotation is documentation only
+  // and is not what the database itself enforces.
+  @@unique([tenantId, roleCode], map: "uk_security_role_tenant_code")
+  @@index([tenantId], map: "idx_security_role_tenant")
+  @@map("security_role")
+}
+
+model SecurityPermission {
+  id             String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  permissionCode String  @unique @map("permission_code")
+  resource       String
+  action         String
+  description    String?
+  isSystem       Boolean @default(true) @map("is_system")
+
+  rolePermissions SecurityRolePermission[]
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedAt DateTime? @map("updated_at") @db.Timestamptz
+  updatedBy String?   @map("updated_by") @db.Uuid
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+  deletedBy String?   @map("deleted_by") @db.Uuid
+  version   BigInt    @default(1)
+
+  @@index([resource], map: "idx_security_permission_resource")
+  @@map("security_permission")
+}
+
+model SecurityRolePermission {
+  id           String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  roleId       String             @map("role_id") @db.Uuid
+  role         SecurityRole       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permissionId String             @map("permission_id") @db.Uuid
+  permission   SecurityPermission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdBy String?  @map("created_by") @db.Uuid
+
+  @@unique([roleId, permissionId], map: "uk_security_role_permission")
+  @@index([roleId], map: "idx_security_role_permission_role")
+  @@index([permissionId], map: "idx_security_role_permission_permission")
+  @@map("security_role_permission")
+}
+
+model SecurityUserRole {
+  id       String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  userId         String        @map("user_id") @db.Uuid
+  user           SecurityUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleId         String        @map("role_id") @db.Uuid
+  role           SecurityRole  @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  organizationId String?       @map("organization_id") @db.Uuid
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdBy String?  @map("created_by") @db.Uuid
+
+  @@unique([userId, roleId, organizationId], map: "uk_security_user_role")
+  @@index([tenantId], map: "idx_security_user_role_tenant")
+  @@index([userId], map: "idx_security_user_role_user")
+  @@index([roleId], map: "idx_security_user_role_role")
+  @@index([organizationId], map: "idx_security_user_role_organization")
+  @@map("security_user_role")
+}
+
+model SecuritySession {
+  id       String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  tenantId String       @map("tenant_id") @db.Uuid
+  tenant   Tenant       @relation(fields: [tenantId], references: [id])
+  userId   String       @map("user_id") @db.Uuid
+  user     SecurityUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // The session's current organization-context selection — null means
+  // tenant-wide. Persisted here (not just as a JWT claim) so it survives a
+  // silent access-token refresh without a DB round-trip on every request.
+  organizationId String?       @map("organization_id") @db.Uuid
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  deviceInfo String? @map("device_info")
+  ipAddress  String? @map("ip_address")
+
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  lastUsedAt DateTime? @map("last_used_at") @db.Timestamptz
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz
+
+  revokedAt     DateTime? @map("revoked_at") @db.Timestamptz
+  revokedReason String?   @map("revoked_reason")
+
+  rememberMe Boolean @default(false) @map("remember_me")
+
+  refreshTokens SecurityRefreshToken[]
+
+  @@index([tenantId], map: "idx_security_session_tenant")
+  @@index([userId], map: "idx_security_session_user")
+  @@index([organizationId], map: "idx_security_session_organization")
+  @@map("security_session")
+}
+
+model SecurityRefreshToken {
+  id        String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  tenantId  String          @map("tenant_id") @db.Uuid
+  tenant    Tenant          @relation(fields: [tenantId], references: [id])
+  sessionId String          @map("session_id") @db.Uuid
+  session   SecuritySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userId    String          @map("user_id") @db.Uuid
+  user      SecurityUser    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tokenHash String @unique @map("token_hash")
+
+  issuedAt  DateTime @default(now()) @map("issued_at") @db.Timestamptz
+  expiresAt DateTime @map("expires_at") @db.Timestamptz
+
+  rotatedAt DateTime? @map("rotated_at") @db.Timestamptz
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz
+
+  replacedById String?               @unique @map("replaced_by_id") @db.Uuid
+  replacedBy   SecurityRefreshToken? @relation("RefreshTokenChain", fields: [replacedById], references: [id])
+  replaces     SecurityRefreshToken? @relation("RefreshTokenChain")
+
+  @@index([tenantId], map: "idx_security_refresh_token_tenant")
+  @@index([sessionId], map: "idx_security_refresh_token_session")
+  @@index([userId], map: "idx_security_refresh_token_user")
+  @@map("security_refresh_token")
+}
+
+// Forgot-password flow. Only a SHA-256 hash of the token is ever stored;
+// the plain token embeds the tenant id in cleartext so the reset endpoint
+// can resolve RLS-scoped context before any authenticated session exists.
+model SecurityPasswordResetToken {
+  id       String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  tenantId String       @map("tenant_id") @db.Uuid
+  tenant   Tenant       @relation(fields: [tenantId], references: [id])
+  userId   String       @map("user_id") @db.Uuid
+  user     SecurityUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tokenHash String @unique @map("token_hash")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz
+  usedAt    DateTime? @map("used_at") @db.Timestamptz
+
+  @@index([tenantId], map: "idx_security_password_reset_token_tenant")
+  @@index([userId], map: "idx_security_password_reset_token_user")
+  @@map("security_password_reset_token")
+}
+
+// Admin-initiated user invitation flow. Mirrors the password-reset token
+// exactly — same hash-only storage, same self-identifying plain token.
+model SecurityUserInvitationToken {
+  id       String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  tenantId String       @map("tenant_id") @db.Uuid
+  tenant   Tenant       @relation(fields: [tenantId], references: [id])
+  userId   String       @map("user_id") @db.Uuid
+  user     SecurityUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tokenHash String @unique @map("token_hash")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz
+  usedAt    DateTime? @map("used_at") @db.Timestamptz
+
+  @@index([tenantId], map: "idx_security_user_invitation_token_tenant")
+  @@index([userId], map: "idx_security_user_invitation_token_user")
+  @@map("security_user_invitation_token")
+}
+
+model SecurityLoginAttempt {
+  id       String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  tenantId String?       @map("tenant_id") @db.Uuid
+  tenant   Tenant?       @relation(fields: [tenantId], references: [id])
+  userId   String?       @map("user_id") @db.Uuid
+  user     SecurityUser? @relation(fields: [userId], references: [id])
+
+  identifier    String
+  success       Boolean
+  failureReason String? @map("failure_reason")
+
+  ipAddress String? @map("ip_address")
+  userAgent String? @map("user_agent")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([tenantId], map: "idx_security_login_attempt_tenant")
+  @@index([identifier, createdAt], map: "idx_security_login_attempt_identifier")
+  @@index([ipAddress, createdAt], map: "idx_security_login_attempt_ip")
+  @@map("security_login_attempt")
+}
+
+model SecurityEvent {
+  id          String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  tenantId    String?       @map("tenant_id") @db.Uuid
+  tenant      Tenant?       @relation(fields: [tenantId], references: [id])
+  actorUserId String?       @map("actor_user_id") @db.Uuid
+  actor       SecurityUser? @relation(fields: [actorUserId], references: [id])
+
+  eventType    String  @map("event_type")
+  resourceType String? @map("resource_type")
+  resourceId   String? @map("resource_id") @db.Uuid
+
+  metadata      Json?
+  ipAddress     String? @map("ip_address")
+  userAgent     String? @map("user_agent")
+  correlationId String? @map("correlation_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([tenantId], map: "idx_security_event_tenant")
+  @@index([actorUserId], map: "idx_security_event_actor")
+  @@index([eventType, createdAt], map: "idx_security_event_type")
+  @@map("security_event")
+}

@@ -1,0 +1,33 @@
+# Identity Platform — local development stack.
+#
+# Deliberately distinct service/container names and host port from any
+# TravelOS docker-compose stack, so both can run simultaneously with zero
+# collision. This file starts ONLY this platform's own infrastructure — it
+# never references TravelOS.
+name: identity-platform
+
+services:
+  identity-platform-db:
+    image: postgres:16-alpine
+    container_name: identity-platform-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: identity_platform_db
+      POSTGRES_USER: identity_owner
+      POSTGRES_PASSWORD: changeme
+    ports:
+      # Host 5434 — deliberately not 5432/5433, which is where a local
+      # Postgres service or a TravelOS docker-compose stack may already be
+      # listening. Change only the host side if 5434 is also taken locally.
+      - "5434:5432"
+    volumes:
+      - identity-platform-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U identity_owner -d identity_platform_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  identity-platform-db-data:
+    name: identity-platform-db-data

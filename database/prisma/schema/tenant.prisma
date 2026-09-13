@@ -1,0 +1,47 @@
+// Tenant — the SaaS-customer-level entity every product built on this
+// platform signs up under. This is a Phase 1 REWRITE, not a copy: TravelOS's
+// own Tenant model has ~20 back-relations into product-specific domains
+// (documents, foundation, notifications, subscriptions, ...) that have no
+// place in a reusable identity core. This version's back-relations are
+// limited to exactly the models this platform actually contains.
+// See docs/TRAVELOS_COUPLING.md, "Tenant" row.
+
+model Tenant {
+  id         String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  tenantCode String  @unique @map("tenant_code")
+  tenantName String  @map("tenant_name")
+  legalName  String? @map("legal_name")
+  email      String?
+  phone      String?
+  status     String  @default("PROVISIONING")
+
+  activatedAt DateTime? @map("activated_at") @db.Timestamptz
+  suspendedAt DateTime? @map("suspended_at") @db.Timestamptz
+
+  // Identity domain (security.prisma)
+  users               SecurityUser[]
+  roles               SecurityRole[]
+  userRoles           SecurityUserRole[]
+  sessions            SecuritySession[]
+  refreshTokens       SecurityRefreshToken[]
+  passwordResetTokens SecurityPasswordResetToken[]
+  invitationTokens    SecurityUserInvitationToken[]
+  loginAttempts       SecurityLoginAttempt[]
+  securityEvents      SecurityEvent[]
+
+  // Organization domain (organization.prisma)
+  organizations               Organization[]
+  organizationUnits           OrganizationUnit[]
+  organizationUnitHierarchies OrganizationUnitHierarchy[]
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedAt DateTime? @map("updated_at") @db.Timestamptz
+  updatedBy String?   @map("updated_by") @db.Uuid
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+  deletedBy String?   @map("deleted_by") @db.Uuid
+  version   BigInt    @default(1)
+
+  @@index([status], map: "idx_tenant_status")
+  @@map("tenant")
+}

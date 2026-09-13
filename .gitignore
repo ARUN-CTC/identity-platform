@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Environment — never commit real secrets, only .env.example is tracked
+.env
+.env.*
+!.env.example
+
+# Prisma generated client
+src/generated/
+database/prisma/generated/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor/OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Test coverage
+coverage/
+
+# Database dumps — must never be committed
+*.dump
+*.sql.gz
+*.backup
+
+# TLS/certs/keys — must never be committed
+*.pem
+*.key
+*.crt
+*.p12

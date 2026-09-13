@@ -1,0 +1,22 @@
+// Prisma schema for the Identity Platform.
+// Uses the prismaSchemaFolder preview feature — every domain's *.prisma
+// file in this folder loads together. Run all `prisma` commands with
+// --schema=database/prisma/schema (the folder, not this file).
+//
+// Phase 1 extracted source — see docs/IDENTITY_SOURCE_INVENTORY.md and
+// docs/TRAVELOS_COUPLING.md for what was copied from TravelOS, trimmed,
+// or deliberately excluded.
+
+// No custom `output` — every module in this codebase imports types and
+// PrismaClient from the plain '@prisma/client' package specifier (matching
+// TravelOS's own convention), so the client generates into the default
+// node_modules/@prisma/client / node_modules/.prisma/client location.
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["prismaSchemaFolder"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
