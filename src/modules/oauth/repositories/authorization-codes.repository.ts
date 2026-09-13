@@ -66,4 +66,28 @@ export class AuthorizationCodesRepository {
     );
     return result.count === 1;
   }
+
+  /**
+   * Phase 2D.9 (docs/OAUTH_OPERATIONAL_HARDENING.md §Authorization
+   * transaction lifecycle) — deletes every row for ONE tenant whose
+   * `expiresAt` has already passed, regardless of `consumedAt` (an expired
+   * code is worthless whether or not it was ever redeemed — `tryConsume`
+   * already treats `expiresAt <= now()` as equally invalid either way, so
+   * there is no reason to retain it past that point). NEVER touches a row
+   * whose `expiresAt` is still in the future — an active/unexpired code is
+   * never a cleanup candidate, consumed or not (brief §9: "do not delete
+   * active/unexpired authorization codes").
+   *
+   * RLS-scoped like every other method here — this is the per-tenant
+   * building block; a genuine cross-tenant maintenance sweep is the
+   * standalone `database/scripts/cleanup-expired-authorization-codes.ts`
+   * script (run with an elevated/RLS-exempt role, exactly like
+   * `database/scripts/bootstrap-platform-operator.ts`), never a
+   * background-worker framework introduced into the running application
+   * itself.
+   */
+  async deleteExpiredForTenant(tenantId: string, now: Date = new Date()): Promise<number> {
+    const result = await this.prismaContext.runInContext((tx) => tx.oAuthAuthorizationCode.deleteMany({ where: { tenantId, expiresAt: { lte: now } } }), tenantId);
+    return result.count;
+  }
 }

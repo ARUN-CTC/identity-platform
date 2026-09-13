@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { verifyClientSecret } from '../../../common';
+import { IdentityMetricNames, IdentityMetrics, RequestContextService, verifyClientSecret } from '../../../common';
 import { SecurityEventsService } from '../../security-audit/services';
 import { ApplicationsRepository } from '../../applications/repositories';
 import { UsersService } from '../../users/services';
@@ -66,6 +66,8 @@ export class AuthorizationCodeGrantService {
     private readonly idTokens: IdTokenService,
     private readonly usersService: UsersService,
     private readonly securityEvents: SecurityEventsService,
+    private readonly metrics: IdentityMetrics,
+    private readonly context: RequestContextService,
   ) {}
 
   async issueToken(basicAuth: { clientId: string; clientSecret: string } | null, request: AuthorizationCodeGrantRequest): Promise<AuthorizationCodeGrantResult> {
@@ -240,7 +242,13 @@ export class AuthorizationCodeGrantService {
         organizationId: row.organizationId,
         oidc: Boolean(idToken),
       },
+      correlationId: this.context.traceId,
     });
+    this.metrics.increment(IdentityMetricNames.OAUTH_TOKEN_ISSUED);
+    this.metrics.increment(IdentityMetricNames.OAUTH_AUTHORIZATION_CODE_REDEEMED);
+    if (idToken) {
+      this.metrics.increment(IdentityMetricNames.OIDC_ID_TOKEN_ISSUED);
+    }
 
     return { accessToken, tokenType: 'Bearer', expiresIn, scope, idToken };
   }
@@ -264,10 +272,11 @@ export class AuthorizationCodeGrantService {
   ): Promise<OAuthTokenError> {
     const resourceId = typeof metadata.applicationId === 'string' ? metadata.applicationId : undefined;
     const actorUserId = typeof metadata.userId === 'string' ? metadata.userId : undefined;
+    this.metrics.increment(eventType === 'OAUTH_AUTHORIZATION_CODE_REPLAYED' ? IdentityMetricNames.OAUTH_AUTHORIZATION_CODE_REPLAYED : IdentityMetricNames.OAUTH_TOKEN_DENIED);
     if (tenantId) {
-      await this.securityEvents.record({ tenantId, actorUserId, eventType, resourceType: 'Application', resourceId, metadata: { result: 'DENIED', ...metadata } });
+      await this.securityEvents.record({ tenantId, actorUserId, eventType, resourceType: 'Application', resourceId, metadata: { result: 'DENIED', ...metadata }, correlationId: this.context.traceId });
     } else {
-      await this.securityEvents.recordPlatformEvent({ eventType, resourceType: 'Application', resourceId, metadata: { result: 'DENIED', ...metadata } });
+      await this.securityEvents.recordPlatformEvent({ eventType, resourceType: 'Application', resourceId, metadata: { result: 'DENIED', ...metadata }, correlationId: this.context.traceId });
     }
     return new OAuthTokenError(code, description);
   }

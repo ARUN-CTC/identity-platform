@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { RateLimitGuard, RateLimitModule } from '../../common';
 import { ApplicationsModule } from '../applications/applications.module';
 import { JwtModule } from '../jwt/jwt.module';
 import { MembershipsModule } from '../memberships/memberships.module';
@@ -54,6 +55,13 @@ import { AuthorizationCodeGrantService, AuthorizeService, ClientCredentialsServi
  * parallel authentication path, and never an ID Token. `UsersModule` is
  * imported for the one live lookup UserInfo/ID-Token-issuance both need
  * (current name/email/verification state) — no separate identity store.
+ *
+ * Phase 2D.9 (docs/PHASE_2D9.md, docs/OAUTH_OPERATIONAL_HARDENING.md) —
+ * operational hardening, no new OAuth/OIDC flow. `RateLimitModule`/
+ * `RateLimitGuard` (`src/common/rate-limit/`) are generic, provider-neutral
+ * infrastructure applied via `@RateLimited(policy)` to `/authorize`,
+ * `/token`, and `/userinfo` — this module depends on that shared
+ * abstraction, never the reverse.
  */
 @Module({
   imports: [
@@ -67,9 +75,10 @@ import { AuthorizationCodeGrantService, AuthorizeService, ClientCredentialsServi
     JwtModule,
     ResourceServerModule,
     UsersModule,
+    RateLimitModule,
   ],
   controllers: [JwksController, TokenController, AuthorizeController, UserInfoController, DiscoveryController],
-  providers: [SigningKeyService, ExternalTokenService, ClientCredentialsService, AuthorizationCodesRepository, AuthorizeService, AuthorizationCodeGrantService, IdTokenService],
+  providers: [SigningKeyService, ExternalTokenService, ClientCredentialsService, AuthorizationCodesRepository, AuthorizeService, AuthorizationCodeGrantService, IdTokenService, RateLimitGuard],
   exports: [SigningKeyService, ExternalTokenService, IdTokenService],
 })
 export class OAuthModule {}

@@ -95,3 +95,7 @@ No `/authorize`, `/token`, consent-UI, or authorization-code storage exists yet 
 ## 11. Implementation status (Phase 2D.8, `docs/PHASE_2D8.md`, `docs/OIDC_PROVIDER.md`, `docs/OIDC_ARCHITECTURE.md`)
 
 OIDC is now layered additively on this document's own §2 flow, exactly as anticipated: `openid` in the requested `scope` (still validated by the SAME `ApplicationScopePolicy` this document's §6/§7 already describe) is the sole trigger; nonce, ID Token issuance, `/userinfo`, and discovery are all new, but the Authorization Code + PKCE mechanics themselves — redirect URI exact-match, mandatory `S256` PKCE, single-use atomic code consumption, client authentication — are entirely unmodified. See `docs/OIDC_ARCHITECTURE.md` for the OIDC-specific design and `docs/OIDC_PROVIDER.md` for the full implementation detail.
+
+## 12. Implementation status (Phase 2D.9, `docs/PHASE_2D9.md`, `docs/OAUTH_OPERATIONAL_HARDENING.md`)
+
+Purely operational hardening — no change to this document's own flow, redirect-URI policy, PKCE requirement, or client authentication. `/authorize` and `/token` are now rate-limited (`RateLimitGuard`, provider-neutral, in-process by default) and every field bounded (`@MaxLength`), both enforced BEFORE this document's own validation logic ever runs. See `docs/OAUTH_OPERATIONAL_HARDENING.md` for the full detail.

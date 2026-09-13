@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { parseScopeClaim, RequestContextService } from '../../../common';
+import { IdentityMetricNames, IdentityMetrics, parseScopeClaim, RequestContextService } from '../../../common';
 import { ApplicationAudiencePolicy, ApplicationScopePolicy, OAuthApplicationPolicyService, OAuthEligibilityError } from '../../applications/policies';
 import { MembershipsService } from '../../memberships/services';
 import { OrganizationsService } from '../../organizations/services/organizations.service';
@@ -69,9 +69,11 @@ export class AuthorizeService {
     private readonly authorizationCodes: AuthorizationCodesRepository,
     private readonly securityEvents: SecurityEventsService,
     private readonly context: RequestContextService,
+    private readonly metrics: IdentityMetrics,
   ) {}
 
   async handle(request: AuthorizeRequest): Promise<AuthorizeResult> {
+    this.metrics.increment(IdentityMetricNames.OAUTH_AUTHORIZE_REQUESTS);
     const tenantId = this.context.requireTenantId();
     const userId = this.context.userId;
     if (!userId) {
@@ -242,7 +244,13 @@ export class AuthorizeService {
         // evaluate whether necessary; prefer safe correlation identifiers").
         oidcRequested: isOidc,
       },
+      // Phase 2D.9 — the request's own trace/correlation id (already
+      // established platform-wide by JwtAuthGuard, brief §6/§7) — never a
+      // secret, never itself an authorization decision, only a
+      // cross-log/cross-event correlation fact.
+      correlationId: this.context.traceId,
     });
+    this.metrics.increment(IdentityMetricNames.OAUTH_AUTHORIZATION_CODE_ISSUED);
 
     return { kind: 'issued', redirectUri, code: plain, state: request.state };
   }
@@ -255,12 +263,14 @@ export class AuthorizeService {
    * as a redirect via `deny()` above) — one chokepoint either way.
    */
   private async auditDenied(tenantId: string, userId: string, reasonCode: string, metadata: Record<string, unknown>): Promise<void> {
+    this.metrics.increment(IdentityMetricNames.OAUTH_AUTHORIZE_DENIED);
     await this.securityEvents.record({
       tenantId,
       actorUserId: userId,
       eventType: 'OAUTH_AUTHORIZATION_DENIED',
       resourceType: 'Application',
       metadata: { result: 'DENIED', reasonCode, ...metadata },
+      correlationId: this.context.traceId,
     });
   }
 }

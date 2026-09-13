@@ -62,3 +62,7 @@ No ID Token is minted, no `/userinfo`/discovery endpoint exists, no `openid`/`pr
 - **Subject scheme confirmed as designed**: `sub = SecurityUser.id`, public (non-pairwise) — the SAME value the Access Token's own `sub` already carries (Phase 2D.7). No pairwise-per-client subject identifiers.
 
 Everything else — the `openid` scope trigger, `nonce` mechanics, ID Token vs. Access Token separation (`aud` semantics in particular), `/userinfo` using the access token never the ID token, and the discovery document — is implemented exactly as this document describes. See `docs/OIDC_PROVIDER.md` for the full implementation detail.
+
+## 11. Implementation status (Phase 2D.9, `docs/PHASE_2D9.md`, `docs/OAUTH_OPERATIONAL_HARDENING.md`)
+
+`/userinfo` is now rate-limited and, closing a Phase 2D.8 gap, now records a durable audit event on both success (`OIDC_USERINFO_ACCESSED`) and denial (`OIDC_USERINFO_DENIED`) — no change to §6's own authentication/claim-release logic. See `docs/OAUTH_OPERATIONAL_HARDENING.md` for the full detail.

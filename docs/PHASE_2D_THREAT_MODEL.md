@@ -60,3 +60,27 @@ The human-user counterpart to Phase 2D.4's machine flow makes the following rows
 ## Phase 2D.8 implementation status (`docs/PHASE_2D8.md`, `docs/OIDC_PROVIDER.md`)
 
 Adds **#34/#35/#36** (new, above), all tested directly. Also extends: **#6/#7** (JWT forgery/algorithm confusion) — the ID Token is signed and independently verifiable through the identical RS256/`kid`/JWKS machinery already proven for Access Tokens, now exercised by a dedicated unit suite (`id-token.service.spec.ts`) AND a live-JWKS-fetch e2e test (brief §58), never a second cryptographic implementation. **#13/#18** (audience confusion) — extended with the single most important new rule this phase introduces: an ID Token's `aud` is the OIDC client's own `clientId`, never a resource-API audience, verified by asserting the ID Token and Access Token issued in the SAME transaction carry DIFFERENT, non-interchangeable `aud` values. **#26** (enumeration) — extended to `/userinfo`: missing bearer, wrong audience, an ID Token presented as bearer, and a token lacking the `openid` scope are all rejected without revealing which specific condition failed beyond the standard `invalid_token`/`insufficient_scope` distinction RFC 6750 already requires. **#20** (stale membership/entitlement) is NOT re-exercised for OIDC claims specifically — `/userinfo` and ID-Token issuance both perform a fresh, live `SecurityUser` lookup (`findGlobalById`) on every call, so a user's current name/email/verification state is always reflected, never cached or stale by construction. Not yet exercised by this phase: **#28/#29** (token forwarding/confused deputy) — same reasoning as Phase 2D.7 (no second real service to forward to); the OIDC Client itself (the RP) is, by design, external to this codebase and not simulated here beyond the independent-verifier pattern brief §58 requires.
+
+## Phase 2D.9 implementation status (`docs/PHASE_2D9.md`, `docs/OAUTH_OPERATIONAL_HARDENING.md`)
+
+A new, orthogonal threat CLASS this phase addresses — availability/abuse
+resistance and operational safety, not a new authentication/authorization
+bypass. **New row**: **#37 Endpoint flooding/brute-force abuse** — a
+single client/source repeatedly hammering `/authorize`, `/token`, or
+`/userinfo` (credential-stuffing a ServiceAccount secret, PKCE-verifier
+brute-forcing, or simple denial-of-service) | Rate limiting
+(`RateLimitGuard`, keyed on `client_id` + hashed source, never bypassable
+by varying an unrelated request field) | A distributed attack spreading
+requests across many source identifiers (rate limiting is per-key, not
+global — a genuine distributed-abuse mitigation, e.g. at a
+reverse-proxy/WAF layer, remains an infrastructure-level control outside
+this codebase) | 429 responses, `oauth_rate_limited` metric increments |
+Tested directly (`tests/phase2d9-oauth-operational-hardening.e2e-spec.ts`,
+"Rate limiting"). **Extends #26** (enumeration): rate-limit responses
+verified to never distinguish a real from a fabricated `client_id`
+(identical 429 body either way). **Extends every threat's own §7 audit
+discipline**: `/userinfo` now records `OIDC_USERINFO_ACCESSED`/
+`OIDC_USERINFO_DENIED` (previously unaudited, a Phase 2D.8 gap closed this
+phase); every OAuth/OIDC audit event now additionally carries a
+correlation id, verified never to itself leak a secret/token/code/nonce
+and never to influence the underlying authorization decision.

@@ -1,6 +1,6 @@
-import { Body, Controller, Headers, HttpCode, HttpStatus, Post, UseFilters } from '@nestjs/common';
+import { Body, Controller, Headers, HttpCode, HttpStatus, Post, UseFilters, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Public } from '../../../common';
+import { Public, RateLimited, RateLimitGuard, TOKEN_POLICY_NAME } from '../../../common';
 import { TokenRequestDto, TokenResponseDto } from '../dto';
 import { OAuthTokenError } from '../errors';
 import { OAuthTokenErrorFilter } from '../filters';
@@ -43,6 +43,8 @@ export class TokenController {
   ) {}
 
   @Post('token')
+  @UseGuards(RateLimitGuard)
+  @RateLimited(TOKEN_POLICY_NAME)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'OAuth 2.0/2.1 token endpoint — client_credentials (ServiceAccount) or authorization_code + PKCE (human User)',

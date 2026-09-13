@@ -1,6 +1,7 @@
-import { Controller, Get, HttpStatus, Query, Res, UseFilters } from '@nestjs/common';
+import { Controller, Get, HttpStatus, Query, Res, UseFilters, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
+import { AUTHORIZE_POLICY_NAME, RateLimited, RateLimitGuard } from '../../../common';
 import { AuthorizeQueryDto } from '../dto';
 import { OAuthTokenErrorFilter } from '../filters';
 import { AuthorizeService } from '../services';
@@ -32,6 +33,8 @@ export class AuthorizeController {
   constructor(private readonly authorizeService: AuthorizeService) {}
 
   @Get('authorize')
+  @UseGuards(RateLimitGuard)
+  @RateLimited(AUTHORIZE_POLICY_NAME)
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'OAuth 2.1 Authorization Code + PKCE — authorization request',
