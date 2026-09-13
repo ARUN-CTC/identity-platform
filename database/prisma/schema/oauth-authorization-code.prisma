@@ -68,6 +68,15 @@ model OAuthAuthorizationCode {
   codeChallenge       String @map("code_challenge")
   codeChallengeMethod String @default("S256") @map("code_challenge_method")
 
+  // Phase 2D.8 (docs/OIDC_PROVIDER.md §4) — the OIDC client's own opaque
+  // nonce, present only when `openid` was among the requested scopes
+  // (`scopes.includes('openid')` is the authoritative "is this an OIDC
+  // transaction" flag — no separate boolean is stored). Bound here at
+  // issuance and carried, unmodified, into the ID Token at `/token` — never
+  // re-derived, never regenerated, never substituted for `state` (a
+  // structurally distinct value serving a structurally distinct purpose).
+  nonce String? @map("nonce")
+
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
   expiresAt  DateTime  @map("expires_at") @db.Timestamptz
   consumedAt DateTime? @map("consumed_at") @db.Timestamptz

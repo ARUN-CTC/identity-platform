@@ -30,6 +30,12 @@ CREATE TABLE oauth_authorization_code (
     code_challenge TEXT NOT NULL,
     code_challenge_method VARCHAR(10) NOT NULL DEFAULT 'S256',
 
+    -- Phase 2D.8 — OIDC nonce, present only when `openid` was requested
+    -- (scopes @> ARRAY['openid'] is the authoritative flag; no separate
+    -- boolean column). Bound at issuance, carried unmodified into the ID
+    -- Token at /token.
+    nonce TEXT,
+
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     expires_at TIMESTAMPTZ NOT NULL,
     consumed_at TIMESTAMPTZ,

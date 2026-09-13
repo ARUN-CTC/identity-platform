@@ -7,6 +7,7 @@ import { ProductAccessService } from '../../product-entitlements/services';
 import { SecurityEventsService } from '../../security-audit/services';
 import { TenantsService } from '../../tenants/services/tenants.service';
 import { TokenService } from '../../jwt/services';
+import { OPENID_SCOPE } from '../constants/oidc.constants';
 import { OAuthTokenError } from '../errors';
 import { isValidCodeChallengeFormat } from '../utils';
 import { AuthorizationCodesRepository } from '../repositories';
@@ -21,6 +22,8 @@ export interface AuthorizeRequest {
   codeChallengeMethod?: string;
   audience?: string;
   organizationId?: string;
+  /** Phase 2D.8 (docs/OIDC_PROVIDER.md §4) — mandatory when `scope` includes `openid`; ignored (never required) for an ordinary OAuth-only request. */
+  nonce?: string;
 }
 
 /** Success or (post-redirect_uri-validation) denial — both are delivered as an HTTP redirect. Never used for a PRE-redirect_uri-validation failure, which throws `OAuthTokenError` directly instead (brief §26). */
@@ -146,6 +149,18 @@ export class AuthorizeService {
       return deny('invalid_scope', 'One or more requested scopes are not allowed for this application', 'scope_not_allowed', { requestedScopes });
     }
 
+    // --- 6a. OIDC nonce (Phase 2D.8, brief §8/§9) --------------------------
+    // `openid` in the (already-validated-allowed) requested scopes is the
+    // ONLY thing that makes this an OIDC transaction — never inferred any
+    // other way (brief §5). Nonce is then mandatory, verbatim, never
+    // substituted for or derived from `state`/`tenant_id`/`user_id`/
+    // `session_id` (brief §9/§10 — `state` and `nonce` serve structurally
+    // different purposes and are never conflated).
+    const isOidc = requestedScopes.includes(OPENID_SCOPE);
+    if (isOidc && !request.nonce) {
+      return deny('invalid_request', 'nonce is required when scope includes openid', 'missing_nonce');
+    }
+
     // --- 7. audience (brief §38) -------------------------------------------
     if (!request.audience) {
       return deny('invalid_request', 'audience is required', 'missing_audience');
@@ -201,6 +216,9 @@ export class AuthorizeService {
       scopes: requestedScopes,
       codeChallenge: request.codeChallenge,
       codeChallengeMethod: 'S256',
+      // Phase 2D.8 — bound here, verbatim, only when this is an OIDC
+      // transaction; `null` for an ordinary OAuth-only code (brief §29).
+      nonce: isOidc ? (request.nonce ?? null) : null,
       expiresAt,
     });
 
@@ -218,6 +236,11 @@ export class AuthorizeService {
         audience: request.audience,
         requestedScopes,
         organizationId: effectiveOrganizationId,
+        // Phase 2D.8 — a safe boolean correlation fact only; the nonce
+        // VALUE itself is never written to a durable audit record (brief
+        // §44/§48 — "if nonce/state are included in audit context,
+        // evaluate whether necessary; prefer safe correlation identifiers").
+        oidcRequested: isOidc,
       },
     });
 

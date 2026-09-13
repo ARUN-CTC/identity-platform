@@ -103,6 +103,20 @@ export class ExternalAccessTokenValidator {
   }
 
   private constructPrincipal(payload: JwtPayload, kid: string, expectedAudience: string): AuthenticatedExternalPrincipal {
+    // Phase 2D.8 (docs/OIDC_PROVIDER.md §2, brief §26-28, Invariant 10) —
+    // checked FIRST, before any other claim is even read: an OIDC ID Token
+    // (`IdTokenService.sign()` always sets `token_use: 'id_token'`) must
+    // never be usable as a bearer access token, by construction, not
+    // merely because it happens to lack `tenant_id`/`jti` (though it does).
+    // A Client-Credentials/Authorization-Code Access Token never carries
+    // this value at all (`token_use` is absent, or explicitly
+    // `'access_token'` since Phase 2D.8's own `AuthorizationCodeGrantService`
+    // update) — only an ID Token sets it to `'id_token'`.
+    if (this.optionalStringClaim(payload, 'token_use') === 'id_token') {
+      this.logDenial('id_token_not_accepted', {});
+      throw new ResourceServerAuthError('invalid_token', 'id_token_not_accepted', GENERIC_INVALID_TOKEN_MESSAGE);
+    }
+
     const subject = this.requireStringClaim(payload, 'sub');
     const clientId = this.requireStringClaim(payload, 'client_id');
     const tenantId = this.requireStringClaim(payload, 'tenant_id');

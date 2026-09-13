@@ -97,6 +97,8 @@ describe('Phase 2D.7 — OAuth Authorization Code + PKCE (e2e)', () => {
     codeChallengeMethod?: string;
     audience?: string;
     organizationId?: string;
+    /** Phase 2D.8 addition — only relevant when scope includes openid; unused by every OAuth-only test in this file. */
+    nonce?: string;
   }
 
   function authorizeRequest(token: string, params: AuthorizeParams) {
@@ -110,6 +112,7 @@ describe('Phase 2D.7 — OAuth Authorization Code + PKCE (e2e)', () => {
     if (params.codeChallengeMethod !== undefined) query.code_challenge_method = params.codeChallengeMethod;
     if (params.audience !== undefined) query.audience = params.audience;
     if (params.organizationId !== undefined) query.organization_id = params.organizationId;
+    if (params.nonce !== undefined) query.nonce = params.nonce;
     return request(app.getHttpServer()).get('/api/v1/oauth/authorize').set('Authorization', `Bearer ${token}`).query(query).redirects(0);
   }
 
@@ -343,7 +346,12 @@ describe('Phase 2D.7 — OAuth Authorization Code + PKCE (e2e)', () => {
     });
 
     it('a Phase 2D.7 human token flows through the UNCHANGED Phase 2D.5 resource-server pipeline and is correctly distinguished from a ServiceAccount principal', async () => {
-      const { code, verifier, redirectUri } = await issueValidCode({ audience: DEMO_AUDIENCE, scope: 'openid' });
+      // Phase 2D.8 note: uses SCOPE_READ, not 'openid' — 'openid' now
+      // mandatorily requires a `nonce` (docs/OIDC_PROVIDER.md §4), which
+      // this OAuth-only (non-OIDC) test has no reason to supply. This test
+      // only cares that a Phase 2D.7 human token authenticates correctly at
+      // the unmodified resource-server pipeline, not about scope content.
+      const { code, verifier, redirectUri } = await issueValidCode({ audience: DEMO_AUDIENCE, scope: SCOPE_READ });
       const tokenRes = await exchangeCode({ code, redirectUri, verifier });
       expect(tokenRes.status).toBe(200);
 
@@ -545,11 +553,16 @@ describe('Phase 2D.7 — OAuth Authorization Code + PKCE (e2e)', () => {
           name: `P2D7 Product2 App ${suffix}`,
           clientType: 'CONFIDENTIAL',
           grantTypes: ['authorization_code'],
+          // 'openid' — a standard OIDC scope, exempt from the per-product
+          // namespace requirement (ApplicationScopePolicy) regardless of
+          // which product owns this Application; chosen for exactly that
+          // portability, not for any OIDC behavior this test cares about.
           allowedScopes: ['openid'],
           audiences: [AUDIENCE],
           redirectUris: [REDIRECT_URI],
         });
-      const res = await authorizeRequest(userAccessToken, validAuthorizeParams({ clientId: app2.body.clientId, scope: 'openid' }));
+      // Phase 2D.8 note: 'openid' now mandatorily requires a `nonce` — supplied here purely to keep this pre-existing scope choice valid; this test itself is otherwise unrelated to OIDC.
+      const res = await authorizeRequest(userAccessToken, validAuthorizeParams({ clientId: app2.body.clientId, scope: 'openid', nonce: `n-${randomUUID()}` }));
       expect(res.status).toBe(302);
       expect(new URL(res.headers.location).searchParams.get('error')).toBe('access_denied');
     });

@@ -77,6 +77,11 @@ export class TokenController {
         token_type: result.tokenType,
         expires_in: result.expiresIn,
         scope: result.scope,
+        // Phase 2D.8 — present ONLY when the original /authorize request
+        // included `openid` (AuthorizationCodeGrantService's own
+        // Invariant 4/5 gate) — `undefined` here is simply omitted from the
+        // JSON response, never emitted as `id_token: null`.
+        id_token: result.idToken,
       };
     }
 

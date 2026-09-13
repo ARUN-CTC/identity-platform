@@ -16,7 +16,11 @@ async function bootstrap() {
   // run before Nest's router — same proven pattern this was extracted from.
   app.use(new ClsMiddleware().use);
   app.enableCors();
-  app.setGlobalPrefix('api/v1', { exclude: ['health'] });
+  // '.well-known/jwks.json' (Phase 2D.1) and '.well-known/openid-configuration'
+  // (Phase 2D.8) must resolve at their standard, spec-required paths —
+  // never under the versioned /api/v1 prefix, the same reason 'health' is
+  // excluded.
+  app.setGlobalPrefix('api/v1', { exclude: ['health', '.well-known/jwks.json', '.well-known/openid-configuration'] });
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

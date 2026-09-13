@@ -51,6 +51,7 @@ export class AuthorizeController {
       codeChallengeMethod: query.code_challenge_method,
       audience: query.audience,
       organizationId: query.organization_id,
+      nonce: query.nonce,
     });
 
     const url = new URL(result.redirectUri);

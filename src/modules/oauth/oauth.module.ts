@@ -4,12 +4,14 @@ import { JwtModule } from '../jwt/jwt.module';
 import { MembershipsModule } from '../memberships/memberships.module';
 import { OrganizationsModule } from '../organizations/organizations.module';
 import { ProductEntitlementsModule } from '../product-entitlements/product-entitlements.module';
+import { ResourceServerModule } from '../resource-server/resource-server.module';
 import { SecurityAuditModule } from '../security-audit/security-audit.module';
 import { ServiceAccountsModule } from '../service-accounts/service-accounts.module';
 import { TenantsModule } from '../tenants/tenants.module';
-import { AuthorizeController, JwksController, TokenController } from './controllers';
+import { UsersModule } from '../users/users.module';
+import { AuthorizeController, DiscoveryController, JwksController, TokenController, UserInfoController } from './controllers';
 import { AuthorizationCodesRepository } from './repositories';
-import { AuthorizationCodeGrantService, AuthorizeService, ClientCredentialsService, ExternalTokenService, SigningKeyService } from './services';
+import { AuthorizationCodeGrantService, AuthorizeService, ClientCredentialsService, ExternalTokenService, IdTokenService, SigningKeyService } from './services';
 
 /**
  * Phase 2D.1 (docs/PHASE_2D_ARCHITECTURE.md §Implementation Roadmap 2D.1–2D.2)
@@ -39,11 +41,35 @@ import { AuthorizationCodeGrantService, AuthorizeService, ClientCredentialsServi
  * `AuthorizationCodesRepository` is this phase's own new, narrow repository
  * (`oauth_authorization_code` — never exposed via any tenant-facing CRUD
  * endpoint, brief §16).
+ *
+ * Phase 2D.8 (docs/PHASE_2D8.md) — OIDC Provider. Adds `IdTokenService`
+ * (issuance-only, reuses `SigningKeyService`/the same RS256/`kid`
+ * infrastructure, never a second key-management system),
+ * `DiscoveryController` (`.well-known/openid-configuration`, public, same
+ * posture as `JwksController`), and `UserInfoController`
+ * (`GET /oauth/userinfo`) — the ONE deliberate point of contact with
+ * `ResourceServerModule`: UserInfo authenticates with the SAME
+ * `ExternalBearerAuthGuard`/`ExternalAccessTokenValidator` mechanism any
+ * other protected resource-server route uses (brief §21), never a new or
+ * parallel authentication path, and never an ID Token. `UsersModule` is
+ * imported for the one live lookup UserInfo/ID-Token-issuance both need
+ * (current name/email/verification state) — no separate identity store.
  */
 @Module({
-  imports: [ApplicationsModule, ServiceAccountsModule, TenantsModule, ProductEntitlementsModule, SecurityAuditModule, MembershipsModule, OrganizationsModule, JwtModule],
-  controllers: [JwksController, TokenController, AuthorizeController],
-  providers: [SigningKeyService, ExternalTokenService, ClientCredentialsService, AuthorizationCodesRepository, AuthorizeService, AuthorizationCodeGrantService],
-  exports: [SigningKeyService, ExternalTokenService],
+  imports: [
+    ApplicationsModule,
+    ServiceAccountsModule,
+    TenantsModule,
+    ProductEntitlementsModule,
+    SecurityAuditModule,
+    MembershipsModule,
+    OrganizationsModule,
+    JwtModule,
+    ResourceServerModule,
+    UsersModule,
+  ],
+  controllers: [JwksController, TokenController, AuthorizeController, UserInfoController, DiscoveryController],
+  providers: [SigningKeyService, ExternalTokenService, ClientCredentialsService, AuthorizationCodesRepository, AuthorizeService, AuthorizationCodeGrantService, IdTokenService],
+  exports: [SigningKeyService, ExternalTokenService, IdTokenService],
 })
 export class OAuthModule {}

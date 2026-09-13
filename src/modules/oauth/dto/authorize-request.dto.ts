@@ -67,4 +67,9 @@ export class AuthorizeQueryDto {
   @IsOptional()
   @IsString()
   organization_id?: string;
+
+  @ApiPropertyOptional({ description: 'Phase 2D.8 (OIDC) — mandatory when scope includes openid. Opaque, client-generated, echoed unmodified into the ID Token.' })
+  @IsOptional()
+  @IsString()
+  nonce?: string;
 }

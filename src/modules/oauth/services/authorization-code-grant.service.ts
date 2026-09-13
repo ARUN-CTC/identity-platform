@@ -2,11 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { verifyClientSecret } from '../../../common';
 import { SecurityEventsService } from '../../security-audit/services';
 import { ApplicationsRepository } from '../../applications/repositories';
+import { UsersService } from '../../users/services';
 import { TokenService } from '../../jwt/services';
+import { OPENID_SCOPE } from '../constants/oidc.constants';
 import { OAuthTokenError } from '../errors';
 import { AuthorizationCodesRepository } from '../repositories';
-import { isValidCodeVerifierFormat, verifyCodeVerifier } from '../utils';
+import { isValidCodeVerifierFormat, mapOidcUserClaims, verifyCodeVerifier } from '../utils';
 import { ExternalTokenService } from './external-token.service';
+import { IdTokenService } from './id-token.service';
 
 /** Raw, unvalidated request shape — every field optional; this service itself validates. */
 export interface AuthorizationCodeGrantRequest {
@@ -21,6 +24,8 @@ export interface AuthorizationCodeGrantResult {
   tokenType: 'Bearer';
   expiresIn: number;
   scope?: string;
+  /** Phase 2D.8 — present ONLY when the original authorization request included `openid` (brief §31, Invariant 4/5). Never present for an ordinary OAuth-only transaction. */
+  idToken?: string;
 }
 
 /**
@@ -58,6 +63,8 @@ export class AuthorizationCodeGrantService {
     private readonly authorizationCodes: AuthorizationCodesRepository,
     private readonly tokenService: TokenService,
     private readonly externalTokens: ExternalTokenService,
+    private readonly idTokens: IdTokenService,
+    private readonly usersService: UsersService,
     private readonly securityEvents: SecurityEventsService,
   ) {}
 
@@ -167,6 +174,7 @@ export class AuthorizationCodeGrantService {
         organization_id: row.organizationId ?? undefined, // omitted (never null) when tenant-wide — see ExternalAccessTokenValidator's own optionalStringClaim handling
         scope,
         principal_type: 'USER', // brief §33 — explicit, never inferred from `sub`'s shape
+        token_use: 'access_token', // Phase 2D.8 — explicit token-purpose discriminator (brief §28), distinct from the ID Token issued below
       },
       { audience: row.audience }, // the code's own stored audience — never re-requested at /token (brief §38)
     );
@@ -181,10 +189,46 @@ export class AuthorizationCodeGrantService {
     // implementation"). Deferred and documented
     // (docs/OAUTH_AUTHORIZATION_CODE_PKCE.md §Known limitations).
 
+    // --- 6. ID Token — ONLY if the ORIGINAL /authorize request included
+    // `openid` (brief §31/Invariant 4/5: "do not issue an ID Token if the
+    // original authorization request did not request openid"; the token
+    // request itself has no `openid`/`nonce` of its own to add after the
+    // fact — the authorization code, already atomically consumed above, is
+    // the sole and authoritative record of what was actually requested,
+    // brief §30). `row.nonce` is non-null exactly when `openid` was
+    // requested (AuthorizeService's own invariant) — both are checked as
+    // defense in depth against either ever silently drifting from the other.
+    let idToken: string | undefined;
+    if (row.scopes.includes(OPENID_SCOPE) && row.nonce) {
+      // `findGlobalById` — no ambient tenant context exists at `/token`
+      // (this endpoint is `@Public()`, never behind `JwtAuthGuard`), and the
+      // code's own issuance (`AuthorizeService`, Phase 2D.7) already
+      // independently verified tenant/membership validity; re-deriving that
+      // here would be a second, redundant live-membership check, not a new
+      // invariant this phase needs to introduce. Sanitized (no
+      // passwordHash), matching every other read of this row.
+      const user = await this.usersService.findGlobalById(row.userId);
+      if (!user) {
+        // Exceptionally rare (the user row was deleted between issuance and
+        // exchange) — fails the WHOLE exchange closed rather than silently
+        // issuing an ID Token with no user claims at all.
+        throw await this.deny(row.tenantId, 'invalid_grant', 'The authorization grant is invalid', { reasonCode: 'user_not_found', applicationId: application.id, userId: row.userId });
+      }
+      const oidcClaims = mapOidcUserClaims(
+        { id: user.id, firstName: user.firstName, lastName: user.lastName, username: user.username, email: user.email, emailVerifiedAt: user.emailVerifiedAt },
+        row.scopes,
+      );
+      idToken = this.idTokens.sign({
+        ...oidcClaims,
+        aud: application.clientId, // the REQUESTING OIDC CLIENT — never row.audience (brief §14/§15, Invariant 2)
+        nonce: row.nonce, // the client's own original nonce, unmodified (brief §8, Invariant 7)
+      });
+    }
+
     await this.securityEvents.record({
       tenantId: row.tenantId,
       actorUserId: row.userId,
-      eventType: 'OAUTH_AUTHORIZATION_CODE_REDEEMED',
+      eventType: idToken ? 'OIDC_ID_TOKEN_ISSUED' : 'OAUTH_AUTHORIZATION_CODE_REDEEMED',
       resourceType: 'Application',
       resourceId: application.id,
       metadata: {
@@ -194,10 +238,11 @@ export class AuthorizationCodeGrantService {
         audience: row.audience,
         scopes: row.scopes,
         organizationId: row.organizationId,
+        oidc: Boolean(idToken),
       },
     });
 
-    return { accessToken, tokenType: 'Bearer', expiresIn, scope };
+    return { accessToken, tokenType: 'Bearer', expiresIn, scope, idToken };
   }
 
   /**

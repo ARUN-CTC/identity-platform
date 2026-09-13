@@ -54,6 +54,22 @@ export interface ExternalTokenClaims {
    * to `'USER'`.
    */
   principal_type?: 'USER' | 'SERVICE_ACCOUNT';
+  /**
+   * Phase 2D.8 (docs/OIDC_PROVIDER.md §28, brief §28) — an explicit
+   * token-purpose discriminator, structurally distinguishing an Access
+   * Token from an OIDC ID Token (`IdTokenClaims.token_use` is always
+   * `'id_token'`) — never relying on `aud`/claim-shape alone, per the
+   * brief's own "do not solve this by making Resource Server accept both
+   * token types."
+   *
+   * DELIBERATELY OPTIONAL, and DELIBERATELY never set by
+   * `ClientCredentialsService` (Phase 2D.4, unchanged) — absence means
+   * `'access_token'`, preserving 100% backward compatibility with every
+   * Client Credentials token issued before this claim existed.
+   * `AuthorizationCodeGrantService` (Phase 2D.7, extended in 2D.8) sets it
+   * explicitly to `'access_token'` for the Access Token it signs.
+   */
+  token_use?: 'access_token' | 'id_token';
 }
 
 /** Input to ExternalTokenService.sign() — everything the caller supplies; iss/exp/iat/jti/aud are set by the signing service itself, never passed in directly (mirrors why AccessTokenClaims never lets a caller set iat/exp — see jsonwebtoken's own "Bad option" guard). */

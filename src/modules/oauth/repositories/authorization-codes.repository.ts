@@ -13,6 +13,8 @@ export interface CreateAuthorizationCodeRow {
   scopes: string[];
   codeChallenge: string;
   codeChallengeMethod: string;
+  /** Phase 2D.8 — present only for an OIDC transaction (`scopes` includes `openid`); `null` otherwise. */
+  nonce: string | null;
   expiresAt: Date;
 }
 
