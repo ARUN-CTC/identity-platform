@@ -1,0 +1,4265 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/auth/login": {
+      "post": {
+        "operationId": "AuthenticationController_login",
+        "summary": "Authenticate with tenantCode + email + password",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "operationId": "AuthenticationController_refresh",
+        "summary": "Rotate a refresh token for a new access/refresh token pair",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshTokenDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "operationId": "AuthenticationController_getMe",
+        "summary": "Get the authenticated caller's own session/security context",
+        "description": "Identity comes exclusively from the authenticated JWT (RequestContextService) — there is no way to request another user's context.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
+    "/auth/context/switch": {
+      "post": {
+        "operationId": "AuthenticationController_switchContext",
+        "summary": "Switch the caller's active organization context",
+        "description": "The only client-supplied input is organizationId — which tenant it belongs to, and whether the caller actually has an ACTIVE membership there, are resolved and re-validated entirely server-side. Returns a fresh access/refresh token pair (same shape as login/refresh) reflecting the new context; the old refresh token is invalidated.",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SwitchOrganizationContextDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
+    "/auth/context/clear": {
+      "post": {
+        "operationId": "AuthenticationController_clearContext",
+        "summary": "Return to tenant-wide context (no organization selected)",
+        "description": "Returns a fresh access/refresh token pair with no organizationId claim.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "operationId": "AuthenticationController_logout",
+        "summary": "Revoke the caller's current session",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
+    "/auth/password/change": {
+      "post": {
+        "operationId": "AuthenticationController_changePassword",
+        "summary": "Change the caller's own password",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
+    "/auth/password/forgot": {
+      "post": {
+        "operationId": "AuthenticationController_forgotPassword",
+        "summary": "Request a password-reset email",
+        "description": "Always responds the same way regardless of whether tenantCode/email matched a real account.",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForgotPasswordDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
+    "/auth/password/reset": {
+      "post": {
+        "operationId": "AuthenticationController_resetPassword",
+        "summary": "Complete a password reset using the token from the reset email",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetPasswordDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "authentication"
+        ]
+      }
+    },
+    "/me/organizations": {
+      "get": {
+        "operationId": "MeController_listOrganizations",
+        "summary": "List every organization the caller could switch their active context to",
+        "description": "Every organization this global Identity holds an ACTIVE membership in, across every tenant.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/me/context": {
+      "get": {
+        "operationId": "MeController_getContext",
+        "summary": "The caller's current tenant/organization context",
+        "description": "Equivalent to the tenant/organizationContext portion of GET /auth/me, as its own lightweight call.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/tenants": {
+      "get": {
+        "operationId": "TenantsController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "sortBy",
+            "required": false,
+            "in": "query",
+            "description": "Field to sort by, e.g. 'createdAt'",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sortOrder",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "desc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "tenants"
+        ]
+      },
+      "post": {
+        "operationId": "TenantsController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTenantDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "tenants"
+        ]
+      }
+    },
+    "/tenants/{id}": {
+      "get": {
+        "operationId": "TenantsController_findOne",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "tenants"
+        ]
+      },
+      "patch": {
+        "operationId": "TenantsController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTenantDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "tenants"
+        ]
+      },
+      "delete": {
+        "operationId": "TenantsController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "tenants"
+        ]
+      }
+    },
+    "/tenants/{id}/activate": {
+      "post": {
+        "operationId": "TenantsController_activate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "tenants"
+        ]
+      }
+    },
+    "/tenants/{id}/suspend": {
+      "post": {
+        "operationId": "TenantsController_suspend",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "tenants"
+        ]
+      }
+    },
+    "/users": {
+      "post": {
+        "operationId": "UsersController_create",
+        "summary": "Create a new user (invitation-only)",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUserDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "users"
+        ]
+      },
+      "get": {
+        "operationId": "UsersController_list",
+        "summary": "List users with filters and pagination",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "sortBy",
+            "required": false,
+            "in": "query",
+            "description": "Field to sort by, e.g. 'createdAt'",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sortOrder",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "desc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "PROVISIONED",
+                "ACTIVE",
+                "SUSPENDED",
+                "DEACTIVATED"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/{id}": {
+      "get": {
+        "operationId": "UsersController_findOne",
+        "summary": "Get user by identifier",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "users"
+        ]
+      },
+      "patch": {
+        "operationId": "UsersController_update",
+        "summary": "Update user profile",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "users"
+        ]
+      },
+      "delete": {
+        "operationId": "UsersController_remove",
+        "summary": "Soft delete user",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/{id}/activate": {
+      "post": {
+        "operationId": "UsersController_activate",
+        "summary": "Activate a user (from PROVISIONED or SUSPENDED)",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/{id}/suspend": {
+      "post": {
+        "operationId": "UsersController_suspend",
+        "summary": "Suspend an active user",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/{id}/deactivate": {
+      "post": {
+        "operationId": "UsersController_deactivate",
+        "summary": "Permanently deactivate a user",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/{id}/resend-invitation": {
+      "post": {
+        "operationId": "UsersController_resendInvitation",
+        "summary": "Resend an account-setup invitation email",
+        "description": "Only valid for a still-pending (INVITED) membership. Invalidates any earlier unused invitation link for that organization.",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResendInvitationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/users/{userId}/roles": {
+      "get": {
+        "operationId": "UserRolesController_list",
+        "summary": "List a user's role grants",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "user-roles"
+        ]
+      },
+      "post": {
+        "operationId": "UserRolesController_assign",
+        "summary": "Grant a role to a user, optionally scoped to one organization",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignRoleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "user-roles"
+        ]
+      }
+    },
+    "/users/{userId}/roles/{id}": {
+      "delete": {
+        "operationId": "UserRolesController_revoke",
+        "summary": "Revoke a role grant",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "user-roles"
+        ]
+      }
+    },
+    "/invitations/validate": {
+      "post": {
+        "operationId": "InvitationsController_validate",
+        "summary": "Check an invitation link before rendering the accept-invitation form",
+        "parameters": [
+          {
+            "name": "token",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "invitations"
+        ]
+      }
+    },
+    "/invitations/accept": {
+      "post": {
+        "operationId": "InvitationsController_accept",
+        "summary": "Accept an invitation: set a password and activate the account",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptInvitationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "invitations"
+        ]
+      }
+    },
+    "/security-audit/login-attempts": {
+      "get": {
+        "operationId": "AuditController_listLoginAttempts",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "sortBy",
+            "required": false,
+            "in": "query",
+            "description": "Field to sort by, e.g. 'createdAt'",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sortOrder",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "desc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "userId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "success",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "identifier",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "security-audit"
+        ]
+      }
+    },
+    "/security-audit/events": {
+      "get": {
+        "operationId": "AuditController_listEvents",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "sortBy",
+            "required": false,
+            "in": "query",
+            "description": "Field to sort by, e.g. 'createdAt'",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sortOrder",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "desc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "actorUserId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "eventType",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "security-audit"
+        ]
+      }
+    },
+    "/sessions/me": {
+      "get": {
+        "operationId": "SessionsController_listOwn",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/sessions/{id}": {
+      "delete": {
+        "operationId": "SessionsController_revoke",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/sessions/revoke-others": {
+      "post": {
+        "operationId": "SessionsController_revokeOthers",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/organizations/{organizationId}/members": {
+      "get": {
+        "operationId": "MembershipsController_list",
+        "summary": "List memberships (users) in an organization",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "sortBy",
+            "required": false,
+            "in": "query",
+            "description": "Field to sort by, e.g. 'createdAt'",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sortOrder",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "desc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "memberships"
+        ]
+      }
+    },
+    "/organizations/{organizationId}/members/{userId}": {
+      "patch": {
+        "operationId": "MembershipsController_updateStatus",
+        "summary": "Change a membership status (ACTIVE / SUSPENDED / REMOVED)",
+        "description": "REMOVED ends the user's access to this organization; SUSPENDED pauses it without losing the membership record. Neither deletes any role grant rows scoped to this organization — those simply stop being effective once no ACTIVE membership backs them (see docs/PHASE_2A.md).",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMembershipStatusDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "memberships"
+        ]
+      }
+    },
+    "/organizations": {
+      "get": {
+        "operationId": "OrganizationsController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "sortBy",
+            "required": false,
+            "in": "query",
+            "description": "Field to sort by, e.g. 'createdAt'",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sortOrder",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "desc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "organizations"
+        ]
+      },
+      "post": {
+        "operationId": "OrganizationsController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrganizationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "organizations"
+        ]
+      }
+    },
+    "/organizations/{id}": {
+      "get": {
+        "operationId": "OrganizationsController_findOne",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "organizations"
+        ]
+      },
+      "patch": {
+        "operationId": "OrganizationsController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateOrganizationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "organizations"
+        ]
+      },
+      "delete": {
+        "operationId": "OrganizationsController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "organizations"
+        ]
+      }
+    },
+    "/organization-types": {
+      "get": {
+        "operationId": "OrganizationTypesController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "sortBy",
+            "required": false,
+            "in": "query",
+            "description": "Field to sort by, e.g. 'createdAt'",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sortOrder",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "desc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "organization-types"
+        ]
+      },
+      "post": {
+        "operationId": "OrganizationTypesController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrganizationTypeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "organization-types"
+        ]
+      }
+    },
+    "/organization-types/{id}": {
+      "get": {
+        "operationId": "OrganizationTypesController_findOne",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "organization-types"
+        ]
+      },
+      "patch": {
+        "operationId": "OrganizationTypesController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateOrganizationTypeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "organization-types"
+        ]
+      },
+      "delete": {
+        "operationId": "OrganizationTypesController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "organization-types"
+        ]
+      }
+    },
+    "/roles": {
+      "get": {
+        "operationId": "RolesController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "sortBy",
+            "required": false,
+            "in": "query",
+            "description": "Field to sort by, e.g. 'createdAt'",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sortOrder",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "desc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Matches against roleCode or roleName",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "includeSystem",
+            "required": false,
+            "in": "query",
+            "description": "Include platform-wide system roles alongside tenant roles",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "roles"
+        ]
+      },
+      "post": {
+        "operationId": "RolesController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRoleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "roles"
+        ]
+      }
+    },
+    "/roles/{id}": {
+      "get": {
+        "operationId": "RolesController_findOne",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "roles"
+        ]
+      },
+      "patch": {
+        "operationId": "RolesController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRoleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "roles"
+        ]
+      },
+      "delete": {
+        "operationId": "RolesController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "roles"
+        ]
+      }
+    },
+    "/roles/{roleId}/permissions": {
+      "get": {
+        "operationId": "RolePermissionsController_list",
+        "parameters": [
+          {
+            "name": "roleId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "role-permissions"
+        ]
+      },
+      "post": {
+        "operationId": "RolePermissionsController_assign",
+        "parameters": [
+          {
+            "name": "roleId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignPermissionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "role-permissions"
+        ]
+      }
+    },
+    "/roles/{roleId}/permissions/{permissionId}": {
+      "delete": {
+        "operationId": "RolePermissionsController_revoke",
+        "parameters": [
+          {
+            "name": "roleId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "permissionId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "role-permissions"
+        ]
+      }
+    },
+    "/permissions": {
+      "get": {
+        "operationId": "PermissionsController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "sortBy",
+            "required": false,
+            "in": "query",
+            "description": "Field to sort by, e.g. 'createdAt'",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sortOrder",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "desc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "resource",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Matches against permissionCode",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "permissions"
+        ]
+      },
+      "post": {
+        "operationId": "PermissionsController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePermissionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "permissions"
+        ]
+      }
+    },
+    "/permissions/{id}": {
+      "get": {
+        "operationId": "PermissionsController_findOne",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "permissions"
+        ]
+      },
+      "patch": {
+        "operationId": "PermissionsController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePermissionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "permissions"
+        ]
+      },
+      "delete": {
+        "operationId": "PermissionsController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "permissions"
+        ]
+      }
+    },
+    "/platform/auth/login": {
+      "post": {
+        "operationId": "PlatformAuthController_login",
+        "summary": "Authenticate a Platform Operator with email + password (no tenantCode)",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlatformLoginDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "platform-auth"
+        ]
+      }
+    },
+    "/platform/auth/refresh": {
+      "post": {
+        "operationId": "PlatformAuthController_refresh",
+        "summary": "Rotate a Platform Operator refresh token",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlatformRefreshTokenDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "platform-auth"
+        ]
+      }
+    },
+    "/platform/auth/me": {
+      "get": {
+        "operationId": "PlatformAuthController_getMe",
+        "summary": "Get the authenticated Platform Operator's own identity/permissions",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "platform-auth"
+        ]
+      }
+    },
+    "/platform/auth/logout": {
+      "post": {
+        "operationId": "PlatformAuthController_logout",
+        "summary": "Revoke the caller's current Platform Operator session",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "platform-auth"
+        ]
+      }
+    },
+    "/platform/operators": {
+      "post": {
+        "operationId": "PlatformOperatorsController_create",
+        "summary": "Grant Platform Operator authority to an existing, already-activated Identity",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePlatformOperatorDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "platform-operators"
+        ]
+      },
+      "get": {
+        "operationId": "PlatformOperatorsController_list",
+        "summary": "List Platform Operators",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "sortBy",
+            "required": false,
+            "in": "query",
+            "description": "Field to sort by, e.g. 'createdAt'",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sortOrder",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "desc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "platform-operators"
+        ]
+      }
+    },
+    "/platform/operators/{id}": {
+      "get": {
+        "operationId": "PlatformOperatorsController_findOne",
+        "summary": "Get a Platform Operator by id",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "platform-operators"
+        ]
+      },
+      "patch": {
+        "operationId": "PlatformOperatorsController_updateStatus",
+        "summary": "Disable or reactivate a Platform Operator",
+        "description": "Disabling immediately revokes every session/refresh-token this operator holds. Rejected with 409 if this would leave zero ACTIVE Platform Operators (enforced at the database level, concurrency-safe).",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePlatformOperatorStatusDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "platform-operators"
+        ]
+      }
+    },
+    "/platform/operators/{id}/permissions": {
+      "post": {
+        "operationId": "PlatformOperatorsController_grantPermission",
+        "summary": "Grant a platform permission to an operator (grant-ceiling enforced against the caller's own permissions)",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrantPlatformPermissionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "platform-operators"
+        ]
+      }
+    },
+    "/platform/operators/{id}/permissions/{code}": {
+      "delete": {
+        "operationId": "PlatformOperatorsController_revokePermission",
+        "summary": "Revoke a platform permission from an operator",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "code",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "platform-operators"
+        ]
+      }
+    },
+    "/platform/audit-events": {
+      "get": {
+        "operationId": "PlatformAuditController_list",
+        "summary": "List platform-scoped security events (never tenant-attributed — docs/PLATFORM_OPERATOR_ARCHITECTURE.md)",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "sortBy",
+            "required": false,
+            "in": "query",
+            "description": "Field to sort by, e.g. 'createdAt'",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sortOrder",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "desc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "eventType",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "platform-audit"
+        ]
+      }
+    },
+    "/products": {
+      "post": {
+        "operationId": "ProductsController_create",
+        "summary": "Register a new Product",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProductDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "products"
+        ]
+      },
+      "get": {
+        "operationId": "ProductsController_list",
+        "summary": "List registered products",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "sortBy",
+            "required": false,
+            "in": "query",
+            "description": "Field to sort by, e.g. 'createdAt'",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sortOrder",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "desc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "products"
+        ]
+      }
+    },
+    "/products/{id}": {
+      "get": {
+        "operationId": "ProductsController_findOne",
+        "summary": "Get a product by id",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "products"
+        ]
+      },
+      "patch": {
+        "operationId": "ProductsController_update",
+        "summary": "Update a product (name, description, status)",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProductDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "products"
+        ]
+      }
+    },
+    "/applications/{id}": {
+      "get": {
+        "operationId": "ApplicationsController_findOne",
+        "summary": "Get an application by id",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "applications"
+        ]
+      },
+      "patch": {
+        "operationId": "ApplicationsController_update",
+        "summary": "Update an application (name, status, reserved OAuth config)",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateApplicationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "applications"
+        ]
+      }
+    },
+    "/products/{productId}/applications": {
+      "get": {
+        "operationId": "ProductApplicationsController_list",
+        "summary": "List applications registered under a product",
+        "parameters": [
+          {
+            "name": "productId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "sortBy",
+            "required": false,
+            "in": "query",
+            "description": "Field to sort by, e.g. 'createdAt'",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sortOrder",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "desc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "applications"
+        ]
+      },
+      "post": {
+        "operationId": "ProductApplicationsController_create",
+        "summary": "Register a new application (client) under a product",
+        "description": "The response includes clientSecret in plaintext exactly once, for a CONFIDENTIAL client — it is never shown again after this call.",
+        "parameters": [
+          {
+            "name": "productId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateApplicationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "applications"
+        ]
+      }
+    },
+    "/platform/tenants/{tenantId}/product-entitlements": {
+      "post": {
+        "operationId": "TenantEntitlementsController_create",
+        "summary": "Entitle a tenant to use a product (created ACTIVE)",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateEntitlementDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "product-entitlements"
+        ]
+      },
+      "get": {
+        "operationId": "TenantEntitlementsController_list",
+        "summary": "List a tenant's product entitlements",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "product-entitlements"
+        ]
+      }
+    },
+    "/platform/tenants/{tenantId}/product-entitlements/{productId}": {
+      "get": {
+        "operationId": "TenantEntitlementsController_findOne",
+        "summary": "Get one tenant/product entitlement",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "productId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "product-entitlements"
+        ]
+      },
+      "patch": {
+        "operationId": "TenantEntitlementsController_updateStatus",
+        "summary": "Change entitlement status (ACTIVE, SUSPENDED, or REVOKED)",
+        "description": "REVOKED -> ACTIVE is not reachable through this endpoint — use POST .../reactivate.",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "productId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateEntitlementStatusDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "product-entitlements"
+        ]
+      }
+    },
+    "/platform/tenants/{tenantId}/product-entitlements/{productId}/reactivate": {
+      "post": {
+        "operationId": "TenantEntitlementsController_reactivate",
+        "summary": "Restore a REVOKED entitlement to ACTIVE — the only path out of REVOKED",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "productId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "product-entitlements"
+        ]
+      }
+    },
+    "/product-entitlements": {
+      "get": {
+        "operationId": "MyEntitlementsController_list",
+        "summary": "List the caller's own tenant's product entitlements, with computed eligibility",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "product-entitlements"
+        ]
+      }
+    },
+    "/applications/{applicationId}/service-accounts": {
+      "get": {
+        "operationId": "ApplicationServiceAccountsController_list",
+        "summary": "List service accounts (machine principals) registered under an application",
+        "parameters": [
+          {
+            "name": "applicationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "sortBy",
+            "required": false,
+            "in": "query",
+            "description": "Field to sort by, e.g. 'createdAt'",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sortOrder",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "desc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "service-accounts"
+        ]
+      },
+      "post": {
+        "operationId": "ApplicationServiceAccountsController_create",
+        "summary": "Register a new service account under an application",
+        "description": "The response includes the plaintext credential exactly once — it is never shown again after this call.",
+        "parameters": [
+          {
+            "name": "applicationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateServiceAccountDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "service-accounts"
+        ]
+      }
+    },
+    "/service-accounts/{id}": {
+      "get": {
+        "operationId": "ServiceAccountsController_findOne",
+        "summary": "Get a service account by id",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "service-accounts"
+        ]
+      },
+      "patch": {
+        "operationId": "ServiceAccountsController_update",
+        "summary": "Update a service account (name, status) — applicationId is immutable",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateServiceAccountDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "service-accounts"
+        ]
+      }
+    },
+    "/platform/tenants/{tenantId}/service-account-grants": {
+      "post": {
+        "operationId": "ServiceAccountTenantGrantsController_create",
+        "summary": "Authorize a service account to act on this tenant (created ACTIVE)",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTenantGrantDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "service-account-tenant-grants"
+        ]
+      },
+      "get": {
+        "operationId": "ServiceAccountTenantGrantsController_list",
+        "summary": "List every service account currently authorized (or previously authorized) to act on this tenant",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "service-account-tenant-grants"
+        ]
+      }
+    },
+    "/platform/tenants/{tenantId}/service-account-grants/{serviceAccountId}": {
+      "get": {
+        "operationId": "ServiceAccountTenantGrantsController_findOne",
+        "summary": "Get one service-account/tenant grant",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "serviceAccountId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "service-account-tenant-grants"
+        ]
+      },
+      "patch": {
+        "operationId": "ServiceAccountTenantGrantsController_updateStatus",
+        "summary": "Change grant status (ACTIVE, SUSPENDED, or REVOKED)",
+        "description": "REVOKED -> ACTIVE is not reachable through this endpoint — use POST .../reactivate.",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "serviceAccountId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTenantGrantStatusDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "service-account-tenant-grants"
+        ]
+      }
+    },
+    "/platform/tenants/{tenantId}/service-account-grants/{serviceAccountId}/reactivate": {
+      "post": {
+        "operationId": "ServiceAccountTenantGrantsController_reactivate",
+        "summary": "Restore a REVOKED grant to ACTIVE — the only path out of REVOKED",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "serviceAccountId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "service-account-tenant-grants"
+        ]
+      }
+    },
+    "/.well-known/jwks.json": {
+      "get": {
+        "operationId": "JwksController_getJwks",
+        "summary": "Publish public RSA keys for verifying externally-issued (OAuth/OIDC) RS256 tokens",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "oauth"
+        ]
+      }
+    },
+    "/oauth/token": {
+      "post": {
+        "operationId": "TokenController_issueToken",
+        "summary": "OAuth 2.0/2.1 token endpoint — client_credentials (ServiceAccount) or authorization_code + PKCE (human User)",
+        "description": "application/x-www-form-urlencoded only. client_credentials: client authenticates via HTTP Basic; requires tenant_id/audience/service_account_id/service_account_secret. authorization_code: confidential clients authenticate via HTTP Basic, public clients present client_id in the body; requires code/redirect_uri/code_verifier.",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "oauth"
+        ]
+      }
+    },
+    "/oauth/authorize": {
+      "get": {
+        "operationId": "AuthorizeController_authorize",
+        "summary": "OAuth 2.1 Authorization Code + PKCE — authorization request",
+        "description": "Requires the caller to already hold a valid platform session (Authorization: Bearer <access_token>) — this endpoint never presents or implements a login form. On success, redirects to the exact registered redirect_uri with ?code=&state=. On a validated-client/redirect_uri request that is otherwise denied, redirects with ?error=&error_description=&state=. On a request whose client_id/redirect_uri could not itself be validated, responds directly with a 400/401 JSON body — never a redirect.",
+        "parameters": [
+          {
+            "name": "response_type",
+            "required": false,
+            "in": "query",
+            "description": "Only \"code\" is supported.",
+            "schema": {
+              "example": "code",
+              "type": "string"
+            }
+          },
+          {
+            "name": "client_id",
+            "required": false,
+            "in": "query",
+            "description": "The requesting Application (OAuth client) id.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "redirect_uri",
+            "required": false,
+            "in": "query",
+            "description": "Must exactly match one of the Application's registered redirect URIs.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "scope",
+            "required": false,
+            "in": "query",
+            "description": "Space-delimited scopes — must be a subset of the Application's allowed scopes.",
+            "schema": {
+              "example": "travel.read",
+              "type": "string"
+            }
+          },
+          {
+            "name": "state",
+            "required": false,
+            "in": "query",
+            "description": "Opaque client state — preserved exactly, returned on both success and (where possible) error.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "code_challenge",
+            "required": false,
+            "in": "query",
+            "description": "PKCE code_challenge — BASE64URL(SHA256(code_verifier)).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "code_challenge_method",
+            "required": false,
+            "in": "query",
+            "description": "Only \"S256\" is supported — \"plain\" is rejected.",
+            "schema": {
+              "example": "S256",
+              "type": "string"
+            }
+          },
+          {
+            "name": "audience",
+            "required": false,
+            "in": "query",
+            "description": "The resource API this code (and the token it produces) is for — must be one of the Application's own allowed audiences.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organization_id",
+            "required": false,
+            "in": "query",
+            "description": "A REQUESTED organization context (never trusted on its own) — independently revalidated against the authenticated user's own ACTIVE membership. Omit to use the authenticated session's own current organization context.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "nonce",
+            "required": false,
+            "in": "query",
+            "description": "Phase 2D.8 (OIDC) — mandatory when scope includes openid. Opaque, client-generated, echoed unmodified into the ID Token.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "oauth"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/oauth/userinfo": {
+      "get": {
+        "operationId": "UserInfoController_userInfo",
+        "summary": "OIDC UserInfo — returns claims for the authenticated principal, scope-gated",
+        "description": "Requires an access token issued for the identity-platform-userinfo audience, carrying the openid scope. Never accepts an ID Token.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "oauth"
+        ],
+        "security": [
+          {
+            "bearer": []
+          }
+        ]
+      }
+    },
+    "/.well-known/openid-configuration": {
+      "get": {
+        "operationId": "DiscoveryController_getConfiguration",
+        "summary": "OIDC discovery document — advertises only implemented capabilities",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "oauth"
+        ]
+      }
+    },
+    "/resource-server/demo/whoami": {
+      "get": {
+        "operationId": "ResourceServerDemoController_whoami",
+        "summary": "[test support only] Returns the validated external principal — proves the guard/validator pipeline end to end.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "resource-server-demo (test support only)"
+        ]
+      }
+    },
+    "/resource-server/demo/scoped": {
+      "get": {
+        "operationId": "ResourceServerDemoController_scoped",
+        "summary": "[test support only] Demonstrates a product-owned scope check (requireScope) — never centralized IAM logic.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "resource-server-demo (test support only)"
+        ]
+      }
+    },
+    "/resource-server/demo/tenant-bound": {
+      "get": {
+        "operationId": "ResourceServerDemoController_tenantBound",
+        "summary": "[test support only] Demonstrates the tenant-header-match contract (brief §17) — a caller-supplied X-Tenant-Id must match the token, never override it.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "resource-server-demo (test support only)"
+        ]
+      }
+    },
+    "/resource-server/demo/authorized/product-a": {
+      "get": {
+        "operationId": "ResourceServerDemoController_authorizedProductA",
+        "summary": "[test support only] Full authentication + authorization pipeline against a registered demo policy (Product A).",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "resource-server-demo (test support only)"
+        ]
+      }
+    },
+    "/resource-server/demo/authorized/product-b": {
+      "get": {
+        "operationId": "ResourceServerDemoController_authorizedProductB",
+        "summary": "[test support only] Full authentication + authorization pipeline against a registered demo policy (Product B).",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "resource-server-demo (test support only)"
+        ]
+      }
+    },
+    "/resource-server/demo/authorized/unregistered": {
+      "get": {
+        "operationId": "ResourceServerDemoController_authorizedUnregistered",
+        "summary": "[test support only] No policy is ever registered for this product — always denies.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "resource-server-demo (test support only)"
+        ]
+      }
+    },
+    "/resource-server/demo/authorized/contract-demo": {
+      "get": {
+        "operationId": "ResourceServerDemoController_authorizedContractDemo",
+        "summary": "[test support only] Full contract-facade-only authentication + authorization + entitlement pipeline (Phase 2D.10).",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "resource-server-demo (test support only)"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "HealthController_check",
+        "summary": "[legacy, combined] Process + database status — prefer /health/live and /health/ready for new integrations",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/health/live": {
+      "get": {
+        "operationId": "HealthController_live",
+        "summary": "Liveness — is the process itself alive? No I/O, no dependency check.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "operationId": "HealthController_ready",
+        "summary": "Readiness — can this instance safely serve requests right now? 503 if the database is unreachable.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "health"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "Identity Platform API",
+    "description": "Modular, product-agnostic IAM platform: tenants, organizations, users, roles/permissions (RBAC), sessions, authentication, OAuth 2.1/OIDC, and security audit. Phase 2D.12 contract freeze — see docs/API_SECURITY_CONTRACT_FREEZE.md.",
+    "version": "1.0.0",
+    "contact": {}
+  },
+  "tags": [],
+  "servers": [],
+  "components": {
+    "securitySchemes": {
+      "bearer": {
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "type": "http"
+      }
+    },
+    "schemas": {
+      "LoginDto": {
+        "type": "object",
+        "properties": {
+          "tenantCode": {
+            "type": "string",
+            "description": "The tenant to sign into. PHASE 2A: email is now globally unique on its own (docs/PHASE_2A.md) — tenantCode's job is selecting which of this Identity's tenant memberships becomes the active session, not disambiguating the account itself. A global Identity with no membership in the named tenant fails the same way as an unrecognized email (see AuthenticationService.login()). Picking *which* tenant/organization to sign into via a picker UI, without knowing the code in advance, is Phase 2C's organization-context scope (docs/ORGANIZATION_CONTEXT.md), not built here."
+          },
+          "email": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          },
+          "deviceInfo": {
+            "type": "string"
+          },
+          "rememberMe": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "tenantCode",
+          "email",
+          "password"
+        ]
+      },
+      "RefreshTokenDto": {
+        "type": "object",
+        "properties": {
+          "refreshToken": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "refreshToken"
+        ]
+      },
+      "SwitchOrganizationContextDto": {
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "description": "The organization to make the active context for this session"
+          }
+        },
+        "required": [
+          "organizationId"
+        ]
+      },
+      "ChangePasswordDto": {
+        "type": "object",
+        "properties": {
+          "currentPassword": {
+            "type": "string"
+          },
+          "newPassword": {
+            "type": "string",
+            "minLength": 8
+          }
+        },
+        "required": [
+          "currentPassword",
+          "newPassword"
+        ]
+      },
+      "ForgotPasswordDto": {
+        "type": "object",
+        "properties": {
+          "tenantCode": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenantCode",
+          "email"
+        ]
+      },
+      "ResetPasswordDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string"
+          },
+          "newPassword": {
+            "type": "string",
+            "minLength": 8
+          }
+        },
+        "required": [
+          "token",
+          "newPassword"
+        ]
+      },
+      "CreateTenantDto": {
+        "type": "object",
+        "properties": {
+          "tenantCode": {
+            "type": "string"
+          },
+          "tenantName": {
+            "type": "string"
+          },
+          "legalName": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenantCode",
+          "tenantName"
+        ]
+      },
+      "UpdateTenantDto": {
+        "type": "object",
+        "properties": {
+          "tenantName": {
+            "type": "string"
+          },
+          "legalName": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PROVISIONING",
+              "ACTIVE",
+              "SUSPENDED"
+            ]
+          }
+        }
+      },
+      "CreateUserDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "organizationId": {
+            "type": "string",
+            "description": "The organization this user is being onboarded into."
+          },
+          "username": {
+            "type": "string"
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "organizationId",
+          "firstName",
+          "lastName"
+        ]
+      },
+      "UpdateUserDto": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string"
+          },
+          "firstName": {
+            "type": "string"
+          },
+          "lastName": {
+            "type": "string"
+          }
+        }
+      },
+      "ResendInvitationDto": {
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "organizationId"
+        ]
+      },
+      "AssignRoleDto": {
+        "type": "object",
+        "properties": {
+          "roleId": {
+            "type": "string"
+          },
+          "organizationId": {
+            "type": "string",
+            "description": "Scopes the grant to one organization; omit for a tenant-wide grant."
+          }
+        },
+        "required": [
+          "roleId"
+        ]
+      },
+      "AcceptInvitationDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8
+          }
+        },
+        "required": [
+          "token",
+          "password"
+        ]
+      },
+      "UpdateMembershipStatusDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "SUSPENDED",
+              "REMOVED"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "CreateOrganizationDto": {
+        "type": "object",
+        "properties": {
+          "organizationTypeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "organizationCode": {
+            "type": "string",
+            "maxLength": 50
+          },
+          "organizationName": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "legalName": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "website": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "organizationTypeId",
+          "organizationCode",
+          "organizationName"
+        ]
+      },
+      "UpdateOrganizationDto": {
+        "type": "object",
+        "properties": {
+          "organizationTypeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "organizationName": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "legalName": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "website": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "INACTIVE"
+            ]
+          }
+        }
+      },
+      "CreateOrganizationTypeDto": {
+        "type": "object",
+        "properties": {
+          "typeCode": {
+            "type": "string",
+            "maxLength": 50
+          },
+          "typeName": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "description": {
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "typeCode",
+          "typeName"
+        ]
+      },
+      "UpdateOrganizationTypeDto": {
+        "type": "object",
+        "properties": {
+          "typeName": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "description": {
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      },
+      "CreateRoleDto": {
+        "type": "object",
+        "properties": {
+          "roleCode": {
+            "type": "string",
+            "example": "BILLING_MANAGER",
+            "maxLength": 50
+          },
+          "roleName": {
+            "type": "string",
+            "example": "Billing Manager",
+            "maxLength": 100
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "roleCode",
+          "roleName"
+        ]
+      },
+      "UpdateRoleDto": {
+        "type": "object",
+        "properties": {
+          "roleName": {
+            "type": "string",
+            "example": "Billing Manager",
+            "maxLength": 100
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      },
+      "AssignPermissionDto": {
+        "type": "object",
+        "properties": {
+          "permissionId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "permissionId"
+        ]
+      },
+      "CreatePermissionDto": {
+        "type": "object",
+        "properties": {
+          "permissionCode": {
+            "type": "string",
+            "example": "USER_VIEW",
+            "description": "RESOURCE_ACTION format"
+          },
+          "resource": {
+            "type": "string",
+            "example": "USER",
+            "maxLength": 50
+          },
+          "action": {
+            "type": "string",
+            "example": "VIEW",
+            "maxLength": 30
+          },
+          "description": {
+            "type": "string"
+          },
+          "isSystem": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "permissionCode",
+          "resource",
+          "action"
+        ]
+      },
+      "UpdatePermissionDto": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string"
+          }
+        }
+      },
+      "PlatformLoginDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          },
+          "deviceInfo": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ]
+      },
+      "PlatformRefreshTokenDto": {
+        "type": "object",
+        "properties": {
+          "refreshToken": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "refreshToken"
+        ]
+      },
+      "CreatePlatformOperatorDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Must already resolve to an existing global Identity with a password set."
+          },
+          "permissionCodes": {
+            "description": "Platform-only permission codes to grant immediately. The caller must already hold every code listed (grant-ceiling — same rule already enforced for tenant role grants).",
+            "example": [
+              "PRODUCT_VIEW",
+              "APPLICATION_VIEW"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "email",
+          "permissionCodes"
+        ]
+      },
+      "UpdatePlatformOperatorStatusDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "DISABLED"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "GrantPlatformPermissionDto": {
+        "type": "object",
+        "properties": {
+          "permissionCode": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "permissionCode"
+        ]
+      },
+      "CreateProductDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "slug": {
+            "type": "string",
+            "maxLength": 50,
+            "description": "Lowercase, hyphenated identifier — also the future permission-namespace prefix (docs/AUTHORIZATION_ARCHITECTURE.md §2). Unique case-insensitively.",
+            "example": "travelos"
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "slug"
+        ]
+      },
+      "UpdateProductDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "SUSPENDED",
+              "DISABLED"
+            ],
+            "description": "A DISABLED (or SUSPENDED) product must not be treated as an active trusted caller by anything checking it — enforcement of that is a later phase's job once anything actually checks Product status at request time (docs/PHASE_2B.md)."
+          }
+        }
+      },
+      "UpdateApplicationDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "SUSPENDED",
+              "DISABLED"
+            ]
+          },
+          "redirectUris": {
+            "description": "Replaces the entire redirect URI allow-list. Format validated server-side (RedirectUriPolicy).",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowedOrigins": {
+            "description": "Replaces the entire allowed-origin (CORS) allow-list. Format validated server-side (OriginPolicy).",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "grantTypes": {
+            "type": "array",
+            "description": "Replaces the entire grant-type allow-list.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "authorization_code",
+                "client_credentials"
+              ]
+            }
+          },
+          "allowedScopes": {
+            "description": "Replaces the entire OAuth-scope allow-list.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "audiences": {
+            "description": "Replaces the entire resource-audience allow-list.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "CreateApplicationDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "example": "TravelOS Web"
+          },
+          "clientType": {
+            "type": "string",
+            "enum": [
+              "CONFIDENTIAL",
+              "PUBLIC"
+            ],
+            "default": "CONFIDENTIAL"
+          },
+          "redirectUris": {
+            "description": "Exact-match redirect URI allow-list for the authorization_code grant. HTTPS required except localhost/127.0.0.1 (development); custom mobile/native schemes permitted. No wildcards, no fragments. Format validated server-side (RedirectUriPolicy) rather than by a generic URL decorator, which would incorrectly reject valid custom schemes.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowedOrigins": {
+            "description": "Exact-match browser-origin allow-list (CORS) — distinct from redirectUris.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "grantTypes": {
+            "type": "array",
+            "default": [],
+            "description": "Deny-by-default allow-list of OAuth grant types this Application may use. Empty by default — nothing is authorized until explicitly configured.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "authorization_code",
+                "client_credentials"
+              ]
+            }
+          },
+          "allowedScopes": {
+            "default": [],
+            "description": "Deny-by-default allow-list of OAuth scopes this Application may request — must be a standard OIDC scope (openid/profile/email) or namespaced under this Application's own Product slug.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "audiences": {
+            "default": [],
+            "description": "Deny-by-default allow-list of resource-API audiences this Application may request a token for. No wildcards.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "CreateEntitlementDto": {
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "string",
+            "description": "The Product this Tenant is being entitled to use."
+          }
+        },
+        "required": [
+          "productId"
+        ]
+      },
+      "UpdateEntitlementStatusDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "SUSPENDED",
+              "REVOKED"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "CreateServiceAccountDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "example": "TravelOS Nightly Sync"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "UpdateServiceAccountDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "SUSPENDED",
+              "DISABLED"
+            ]
+          }
+        }
+      },
+      "CreateTenantGrantDto": {
+        "type": "object",
+        "properties": {
+          "serviceAccountId": {
+            "type": "string",
+            "description": "The ServiceAccount being granted authorization to act on this Tenant."
+          }
+        },
+        "required": [
+          "serviceAccountId"
+        ]
+      },
+      "UpdateTenantGrantStatusDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "SUSPENDED",
+              "REVOKED"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "TokenRequestDto": {
+        "type": "object",
+        "properties": {
+          "grant_type": {
+            "type": "string",
+            "example": "client_credentials",
+            "description": "Only client_credentials is supported by this endpoint."
+          },
+          "service_account_id": {
+            "type": "string",
+            "description": "UUID of the ServiceAccount to authenticate as (must belong to the authenticated Application)."
+          },
+          "service_account_secret": {
+            "type": "string",
+            "description": "The ServiceAccount's own credential (distinct from the Application's client_secret)."
+          },
+          "tenant_id": {
+            "type": "string",
+            "description": "UUID of the Tenant the ServiceAccount is requesting to act on — explicit, never assumed."
+          },
+          "audience": {
+            "type": "string",
+            "description": "The resource API this token is for — must be one of the authenticated Application's own allowed audiences."
+          },
+          "scope": {
+            "type": "string",
+            "example": "travel.read travel.write",
+            "description": "Space-delimited scopes (OAuth syntax) — must be a subset of the allowed application scopes."
+          },
+          "code": {
+            "type": "string",
+            "description": "The authorization code returned by GET /oauth/authorize."
+          },
+          "redirect_uri": {
+            "type": "string",
+            "description": "Must exactly match the redirect_uri presented at /oauth/authorize for this code."
+          },
+          "code_verifier": {
+            "type": "string",
+            "description": "PKCE code_verifier — the plaintext value whose S256 hash must equal the code_challenge presented at /oauth/authorize."
+          },
+          "client_id": {
+            "type": "string",
+            "description": "The OAuth client id — required in the request body only for a PUBLIC client (token_endpoint_auth_method=none, no client secret, PKCE is its only proof of possession). A CONFIDENTIAL client authenticates via the Authorization: Basic header instead, exactly as for client_credentials."
+          }
+        },
+        "required": [
+          "grant_type",
+          "service_account_id",
+          "service_account_secret",
+          "tenant_id",
+          "audience"
+        ]
+      }
+    }
+  }
+}

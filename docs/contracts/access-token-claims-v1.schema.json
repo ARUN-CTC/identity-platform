@@ -1,0 +1,31 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://identity-platform.internal/contracts/access-token-claims-v1.schema.json",
+  "title": "Identity Platform — External Access Token Claims (v1, FROZEN)",
+  "description": "The stable claim contract for every externally-issued (RS256/JWKS) access token — human (Authorization Code + PKCE) and machine (Client Credentials) alike. Mirrors AuthenticatedExternalPrincipal (src/modules/resource-server/interfaces/) and docs/IDENTITY_EXTERNAL_API_CONTRACT.md §3. See docs/API_SECURITY_CONTRACT_FREEZE.md for the freeze/versioning policy this schema is governed by.",
+  "type": "object",
+  "required": ["iss", "sub", "aud", "client_id", "tenant_id", "iat", "exp", "jti", "token_use", "principal_type"],
+  "properties": {
+    "iss": { "type": "string", "format": "uri", "description": "REQUIRED. This platform's configured issuer. Verified, never merely copied." },
+    "sub": { "type": "string", "description": "REQUIRED. ServiceAccount.id (principal_type=SERVICE_ACCOUNT) or security_user.id (principal_type=USER). NEVER Application.id." },
+    "aud": { "type": "string", "description": "REQUIRED. Exactly ONE resource-API audience string. Never an array. Never a wildcard — FORBIDDEN, see docs/PHASE_2D_ARCHITECTURE's threat model." },
+    "client_id": { "type": "string", "description": "REQUIRED. The registered Application's clientId this token was issued to." },
+    "tenant_id": { "type": "string", "format": "uuid", "description": "REQUIRED. Server-validated at issuance — the ONLY authoritative tenant. A caller-supplied header claiming a different tenant must be rejected, never trusted over this claim." },
+    "scope": { "type": "string", "description": "OPTIONAL. Space-delimited OAuth scopes. Absence means no scopes, never \"all scopes\". Never itself an IAM permission." },
+    "iat": { "type": "integer", "description": "REQUIRED. Issued-at, seconds since epoch." },
+    "exp": { "type": "integer", "description": "REQUIRED. Expiry, seconds since epoch." },
+    "nbf": { "type": "integer", "description": "OPTIONAL. Not-before, seconds since epoch." },
+    "jti": { "type": "string", "description": "REQUIRED. Unique token id — correlation/logging only, never itself a trust decision." },
+    "token_use": { "type": "string", "enum": ["access_token"], "description": "REQUIRED. Discriminates from an ID Token's token_use='id_token'. A resource server MUST reject any token whose token_use is not exactly 'access_token'." },
+    "principal_type": { "type": "string", "enum": ["USER", "SERVICE_ACCOUNT"], "description": "REQUIRED. The ONLY authoritative discriminator of who this token represents — NEVER inferred from the shape/format of sub." },
+    "organization_id": { "type": ["string", "null"], "description": "OPTIONAL, USER only. null = tenant-wide. Absent for SERVICE_ACCOUNT. Never independently supplied/overridden by a product from client input." }
+  },
+  "additionalProperties": true,
+  "x-forbidden-claims": [
+    "password", "passwordHash", "clientSecret", "serviceAccountSecret", "refreshToken", "authorizationCode", "privateKey"
+  ],
+  "x-deprecated-claims": [],
+  "x-internal-claims-never-in-token": [
+    "internal session details", "raw database row fields not listed above"
+  ]
+}

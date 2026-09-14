@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://identity-platform.internal/contracts/principal-contract-v1.schema.json",
+  "title": "Identity Platform — Product-Facing Principal Contract (v1, FROZEN)",
+  "description": "The stable shape a product receives after validating an Identity-Platform-issued access token — mirrors IdentityPrincipal (src/contracts/identity-principal.contract.ts), itself a type alias of AuthenticatedExternalPrincipal. This is NOT the raw JWT claim set (see access-token-claims-v1.schema.json) — it is the constructed, in-memory principal object a resource server's own validation pipeline produces after signature/issuer/audience/temporal verification.",
+  "type": "object",
+  "required": ["principalType", "principalId", "tenantId", "clientId", "scopes", "jti"],
+  "properties": {
+    "principalType": { "type": "string", "enum": ["USER", "SERVICE_ACCOUNT"], "description": "REQUIRED. Never inferred from principalId's shape/format." },
+    "principalId": { "type": "string", "description": "REQUIRED. The token's own verified sub claim." },
+    "tenantId": { "type": "string", "format": "uuid", "description": "REQUIRED. Authoritative. Never overridden by a client-supplied header/parameter." },
+    "organizationId": { "type": ["string", "null"], "description": "OPTIONAL. USER only — null (tenant-wide) or a validated organization id. Absent for SERVICE_ACCOUNT." },
+    "clientId": { "type": "string", "description": "REQUIRED. The registered Application this token was issued to." },
+    "scopes": { "type": "array", "items": { "type": "string" }, "description": "REQUIRED (may be empty array). Never itself an IAM permission — see docs/PRODUCT_INTEGRATION_CONTRACT.md §5." },
+    "jti": { "type": "string", "description": "REQUIRED. Correlation/logging only." }
+  },
+  "additionalProperties": true,
+  "x-never-exposed": [
+    "password", "passwordHash", "clientSecret", "serviceAccountSecret", "refreshToken", "authorizationCode",
+    "privateKey", "internal session details", "raw Prisma entities", "security-event internals"
+  ],
+  "x-construction-rule": "The contract must not expose Prisma entities directly — every field above is copied from the already-verified AuthenticatedExternalPrincipal, never a live/re-fetched database row (docs/RESOURCE_SERVER_ARCHITECTURE.md: 'no database lookups on every JWT validation')."
+}

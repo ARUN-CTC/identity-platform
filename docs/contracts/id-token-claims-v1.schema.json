@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://identity-platform.internal/contracts/id-token-claims-v1.schema.json",
+  "title": "Identity Platform — OIDC ID Token Claims (v1, FROZEN)",
+  "description": "The stable ID Token claim contract (Phase 2D.8). An ID Token is consumed exactly once, by the requesting client itself, for client-side identity display — it is STRUCTURALLY REJECTED as an API bearer credential (token_use discriminator + missing tenant_id/jti). See docs/OIDC_ARCHITECTURE.md §2 and docs/IDENTITY_EXTERNAL_API_CONTRACT.md §4.",
+  "type": "object",
+  "required": ["iss", "sub", "aud", "iat", "exp", "token_use"],
+  "properties": {
+    "iss": { "type": "string", "format": "uri", "description": "REQUIRED. Same issuer as the access token." },
+    "sub": { "type": "string", "description": "REQUIRED. security_user.id — the SAME value the co-issued Access Token's own sub carries. Public (non-pairwise) subject." },
+    "aud": { "type": "string", "description": "REQUIRED. The REQUESTING OIDC CLIENT's own Application.clientId — never a resource-API audience. Never mix with the Access Token's aud semantics." },
+    "iat": { "type": "integer", "description": "REQUIRED." },
+    "exp": { "type": "integer", "description": "REQUIRED. Short — meant to be consumed immediately after issuance, not stored/reused." },
+    "nonce": { "type": "string", "description": "REQUIRED whenever the /authorize request supplied one (mandatory for every OIDC request in this platform). Echoed verbatim." },
+    "token_use": { "type": "string", "enum": ["id_token"], "description": "REQUIRED. A resource server MUST reject any bearer token carrying this value." },
+    "name": { "type": "string", "description": "OPTIONAL, scope-gated by 'profile'." },
+    "given_name": { "type": "string", "description": "OPTIONAL, scope-gated by 'profile'." },
+    "family_name": { "type": "string", "description": "OPTIONAL, scope-gated by 'profile'." },
+    "preferred_username": { "type": "string", "description": "OPTIONAL, scope-gated by 'profile'." },
+    "email": { "type": "string", "format": "email", "description": "OPTIONAL, scope-gated by 'email'." },
+    "email_verified": { "type": "boolean", "description": "OPTIONAL, scope-gated by 'email'." }
+  },
+  "additionalProperties": false,
+  "x-forbidden-claims": [
+    "scope", "tenant_id", "organization_id", "client_id", "any product/IAM permission claim", "acr", "amr (not fabricated — genuinely unavailable data, Phase 2D.8)"
+  ]
+}

@@ -119,3 +119,26 @@ concurrency test. Confirms `AllExceptionsFilter`'s P2002 mapping must
 OAuth/OIDC/resource-server `HttpException` into this platform's generic
 response envelope, breaking the frozen RFC 6749/6750 wire contract — an
 explicit, documented architectural decision, not an oversight.
+
+## Threat model freeze (Phase 2D.12, `docs/API_SECURITY_CONTRACT_FREEZE.md`)
+
+Every threat in the table above is classified below — no threat silently disappears (brief §31). "MITIGATED" means the named Control is implemented and independently test-verified (a specific test is cited in most rows above). "ACCEPTED" means a residual risk exists that this platform cannot fully close by itself (e.g. it depends on a resource server's or client's own implementation choices) and is explicitly documented as such, not silently ignored. No threat is classified "DEFERRED" — every one of the 36 already has a real, implemented, tested control; none is merely a future design intention.
+
+```text
+MITIGATED (implemented + test-verified):
+  1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 20, 22, 23,
+  24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36
+
+ACCEPTED (residual risk, outside this platform's own sole control,
+          explicitly documented — never silently ignored):
+  9  — JWKS compromise via a sophisticated on-path TLS-interception attacker
+  12 — refresh-token theft via a compromised client's own XSS vulnerability
+       (a client-architecture decision this platform can recommend, not enforce)
+  21 — stale entitlement served by a product's own over-long cache TTL
+       (product-owned caching policy — this platform's own ProductAccessService
+       is always live/current when asked)
+
+DEFERRED: none.
+```
+
+This classification is itself frozen — reclassifying any threat, or adding a new one without immediately classifying it, requires the same "major architecture/security review" `docs/API_SECURITY_CONTRACT_FREEZE.md` §Forbidden Contract Changes names for other frozen decisions.
