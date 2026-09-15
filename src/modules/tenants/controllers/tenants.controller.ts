@@ -1,55 +1,51 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
-import { PaginationQueryDto, RequirePermissions, SkipTenantStatusCheck } from '../../../common';
+import { Body, Controller, Get, Patch } from '@nestjs/common';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { RequestContextService, RequirePermissions, SkipTenantStatusCheck } from '../../../common';
 import { TenantsService } from '../services/tenants.service';
-import { CreateTenantDto } from '../dto/create-tenant.dto';
-import { UpdateTenantDto } from '../dto/update-tenant.dto';
+import { UpdateOwnTenantDto } from '../dto/update-own-tenant.dto';
 
+/**
+ * Phase 2D security remediation
+ * ([[tenant-manage-unscoped-registry-vulnerability]] — previously found:
+ * `TENANT_MANAGE`, a tenant-grantable permission, gated `GET/PATCH/DELETE
+ * /tenants/:id` and friends with zero ownership check, letting any
+ * tenant's own SUPER_ADMIN read/modify/suspend/delete ANY OTHER tenant by
+ * UUID). This controller now exposes ONLY the caller's own tenant —
+ * `me` is not a placeholder for an id, it is the entire point: every
+ * method resolves the tenant exclusively from
+ * `RequestContextService.requireTenantId()` (JWT-derived), and no route
+ * on this controller accepts a tenant id from the client at all, so there
+ * is nothing here left to substitute another tenant's id into.
+ *
+ * Every global tenant-registry operation (list all tenants, read/update
+ * ANY tenant by id, activate/suspend/delete) has moved to
+ * `PlatformTenantsController` (`/platform/tenants`), gated by
+ * `PlatformJwtAuthGuard` + `PlatformPermissionsGuard` with
+ * `PLATFORM_TENANT_VIEW`/`PLATFORM_TENANT_MANAGE` — permissions that are
+ * `platform_only = TRUE` (database trigger
+ * `trg_security_role_permission_no_platform_only` forbids ever granting
+ * them to a tenant Role), unlike `TENANT_MANAGE`.
+ */
 @ApiTags('tenants')
 @SkipTenantStatusCheck()
 @Controller('tenants')
 export class TenantsController {
-  constructor(private readonly tenantsService: TenantsService) {}
+  constructor(
+    private readonly tenantsService: TenantsService,
+    private readonly context: RequestContextService,
+  ) {}
 
-  @Get()
+  @Get('me')
   @RequirePermissions('TENANT_MANAGE')
-  list(@Query() query: PaginationQueryDto) {
-    return this.tenantsService.list(query);
+  @ApiOperation({ summary: "Get the caller's own tenant profile" })
+  findOwn() {
+    return this.tenantsService.findById(this.context.requireTenantId());
   }
 
-  @Get(':id')
+  @Patch('me')
   @RequirePermissions('TENANT_MANAGE')
-  findOne(@Param('id') id: string) {
-    return this.tenantsService.findById(id);
-  }
-
-  @Post()
-  @RequirePermissions('TENANT_MANAGE')
-  create(@Body() dto: CreateTenantDto) {
-    return this.tenantsService.create(dto);
-  }
-
-  @Patch(':id')
-  @RequirePermissions('TENANT_MANAGE')
-  update(@Param('id') id: string, @Body() dto: UpdateTenantDto) {
-    return this.tenantsService.update(id, dto);
-  }
-
-  @Post(':id/activate')
-  @RequirePermissions('TENANT_MANAGE')
-  activate(@Param('id') id: string) {
-    return this.tenantsService.activate(id);
-  }
-
-  @Post(':id/suspend')
-  @RequirePermissions('TENANT_MANAGE')
-  suspend(@Param('id') id: string) {
-    return this.tenantsService.suspend(id);
-  }
-
-  @Delete(':id')
-  @RequirePermissions('TENANT_MANAGE')
-  remove(@Param('id') id: string) {
-    return this.tenantsService.remove(id);
+  @ApiOperation({ summary: "Update the caller's own tenant profile (name, legal name, email, phone — not status)" })
+  updateOwn(@Body() dto: UpdateOwnTenantDto) {
+    return this.tenantsService.updateOwn(this.context.requireTenantId(), dto);
   }
 }
