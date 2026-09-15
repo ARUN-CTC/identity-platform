@@ -1,8 +1,8 @@
 import { render } from "@testing-library/react";
 import { useEffect } from "react";
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { login } from "@/shared/api";
-import { describe, expect, it, vi } from "vitest";
+import { clearSession, login } from "@/shared/api";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AuthProvider, useAuth, type LoginCredentials } from "@/app/providers/AuthProvider";
 import { NotificationProvider } from "@/app/providers/NotificationProvider";
@@ -40,6 +40,25 @@ function LoginTrigger({ redirectTo = "/dashboard" }: { redirectTo?: string }) {
 }
 
 describe("ProtectedRoute", () => {
+  afterEach(() => {
+    // shared/api/session.ts is a plain module-level store (accessToken/
+    // tenantId/userId/organizationId + the persisted refresh token) that
+    // AuthProvider writes to directly, entirely outside React state and
+    // outside this test's own render tree — this file's own "renders the
+    // protected route tree once login succeeds" test (just above) does a
+    // real login, and without resetting this module afterward its
+    // in-memory accessToken silently authenticated the *next* test too
+    // (clearing localStorage/sessionStorage alone does NOT reset it — the
+    // access token itself was never persisted there in the first place).
+    // Found by reading the failing test's own rendered DOM ("Dashboard
+    // content" where "Login page" was expected), not by adjusting a
+    // timeout — TenantSettingsPage.test.tsx/MySessionsPage.test.tsx guard
+    // against the same leak via the persisted-storage half of it, but
+    // clearSession() is the one call that resets all of it at once.
+    vi.mocked(login).mockClear();
+    clearSession();
+  });
+
   it("renders the protected route tree once login succeeds", async () => {
     const { findByText } = render(
       <QueryProvider>
