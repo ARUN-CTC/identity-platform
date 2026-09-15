@@ -22,6 +22,7 @@ const UserDetailsPage = lazy(() => import("@/features/users/pages/UserDetailsPag
 const MySessionsPage = lazy(() => import("@/features/sessions/pages/MySessionsPage"));
 const OrganizationsPage = lazy(() => import("@/features/organizations/pages/OrganizationsPage"));
 const OrganizationDetailsPage = lazy(() => import("@/features/organizations/pages/OrganizationDetailsPage"));
+const OrganizationTypesPage = lazy(() => import("@/features/organization-types/pages/OrganizationTypesPage"));
 const RolesPage = lazy(() => import("@/features/roles/pages/RolesPage"));
 const RoleDetailsPage = lazy(() => import("@/features/roles/pages/RoleDetailsPage"));
 const PermissionsPage = lazy(() => import("@/features/permissions/pages/PermissionsPage"));
@@ -99,6 +100,14 @@ export const router = createBrowserRouter([
             element: (
               <PermissionRoute permission={PERMISSIONS.ORGANIZATION_MANAGE}>
                 <OrganizationDetailsPage />
+              </PermissionRoute>
+            ),
+          },
+          {
+            path: "organization-types",
+            element: (
+              <PermissionRoute permission={PERMISSIONS.ORGANIZATION_MANAGE}>
+                <OrganizationTypesPage />
               </PermissionRoute>
             ),
           },

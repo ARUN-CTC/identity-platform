@@ -1,4 +1,5 @@
 import AddIcon from "@mui/icons-material/Add";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
@@ -30,7 +31,9 @@ import { getApiErrorMessage } from "@/shared/api";
 import type { ApplicationStatus, CreatedServiceAccount } from "@/shared/platform-api";
 
 import { OneTimeSecretDialog } from "../../../components/OneTimeSecretDialog";
+import { usePlatformProductQuery } from "../../products/hooks";
 import { useCreateServiceAccountMutation, useServiceAccountsForApplicationQuery, useUpdateServiceAccountMutation } from "../../service-accounts/hooks";
+import { ApplicationConfigDrawer } from "../ApplicationConfigDrawer";
 import { usePlatformApplicationQuery, useUpdateApplicationMutation } from "../hooks";
 
 function Field({ label, value }: { label: string; value: string }) {
@@ -53,9 +56,11 @@ export default function PlatformApplicationDetailPage() {
   const [createSaOpen, setCreateSaOpen] = useState(false);
   const [saName, setSaName] = useState("");
   const [revealedCredential, setRevealedCredential] = useState<CreatedServiceAccount | null>(null);
+  const [configDrawerOpen, setConfigDrawerOpen] = useState(false);
 
   const applicationQuery = usePlatformApplicationQuery(id);
   const updateAppMutation = useUpdateApplicationMutation(id ?? "", applicationQuery.data?.productId ?? "");
+  const productQuery = usePlatformProductQuery(applicationQuery.data?.productId);
   const serviceAccountsQuery = useServiceAccountsForApplicationQuery(id);
   const createSaMutation = useCreateServiceAccountMutation(id ?? "");
   const updateSaMutation = useUpdateServiceAccountMutation(id ?? "");
@@ -102,14 +107,27 @@ export default function PlatformApplicationDetailPage() {
 
       <Card sx={{ mb: 3 }}>
         <CardContent>
-          <Grid container spacing={2}>
-            <Field label="Client ID" value={application.clientId} />
-            <Field label="Client type" value={application.clientType} />
-            <Field label="Grant types" value={application.grantTypes.join(", ") || "—"} />
-            <Field label="Redirect URIs" value={application.redirectUris.join(", ") || "—"} />
-            <Field label="Allowed scopes" value={application.allowedScopes.join(", ") || "—"} />
-            <Field label="Audiences" value={application.audiences.join(", ") || "—"} />
-          </Grid>
+          <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
+            <Grid container spacing={2} sx={{ flex: 1 }}>
+              <Field label="Client ID" value={application.clientId} />
+              <Field label="Client type" value={application.clientType} />
+              <Field label="Grant types" value={application.grantTypes.join(", ") || "—"} />
+              <Field label="Redirect URIs" value={application.redirectUris.join(", ") || "—"} />
+              <Field label="Allowed origins" value={application.allowedOrigins.join(", ") || "—"} />
+              <Field label="Allowed scopes" value={application.allowedScopes.join(", ") || "—"} />
+              <Field label="Audiences" value={application.audiences.join(", ") || "—"} />
+            </Grid>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<EditOutlinedIcon />}
+              onClick={() => setConfigDrawerOpen(true)}
+              disabled={!productQuery.data}
+              sx={{ flexShrink: 0 }}
+            >
+              Edit configuration
+            </Button>
+          </Stack>
           <FormControl size="small" sx={{ mt: 2, minWidth: 200 }}>
             <InputLabel id="app-status-label">Status</InputLabel>
             <Select labelId="app-status-label" label="Status" value={application.status} onChange={(e) => handleStatusChange(e.target.value as ApplicationStatus)}>
@@ -185,6 +203,15 @@ export default function PlatformApplicationDetailPage() {
 
       {revealedCredential && (
         <OneTimeSecretDialog open onClose={() => setRevealedCredential(null)} label="Service account credential" identity={revealedCredential.name} secret={revealedCredential.credential} />
+      )}
+
+      {productQuery.data && (
+        <ApplicationConfigDrawer
+          open={configDrawerOpen}
+          onClose={() => setConfigDrawerOpen(false)}
+          application={application}
+          productSlug={productQuery.data.slug}
+        />
       )}
     </>
   );

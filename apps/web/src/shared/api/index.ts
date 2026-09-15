@@ -41,7 +41,16 @@ export {
   type MemberUserSummary,
   type MembershipStatus,
 } from "./memberships";
-export { listOrganizationTypes, type OrganizationType } from "./organization-types";
+export {
+  createOrganizationType,
+  deleteOrganizationType,
+  getOrganizationType,
+  listOrganizationTypes,
+  updateOrganizationType,
+  type CreateOrganizationTypeInput,
+  type OrganizationType,
+  type UpdateOrganizationTypeInput,
+} from "./organization-types";
 export {
   createOrganization,
   deleteOrganization,

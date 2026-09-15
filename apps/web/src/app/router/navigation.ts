@@ -1,5 +1,6 @@
 import AdminPanelSettingsOutlinedIcon from "@mui/icons-material/AdminPanelSettingsOutlined";
 import ApartmentOutlinedIcon from "@mui/icons-material/ApartmentOutlined";
+import CategoryOutlinedIcon from "@mui/icons-material/CategoryOutlined";
 import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
 import DevicesOutlinedIcon from "@mui/icons-material/DevicesOutlined";
 import ExtensionOutlinedIcon from "@mui/icons-material/ExtensionOutlined";
@@ -96,6 +97,13 @@ export const navigationSections: NavigationSection[] = [
             label: "Organizations",
             path: "/organizations",
             icon: ApartmentOutlinedIcon,
+            permission: PERMISSIONS.ORGANIZATION_MANAGE,
+          },
+          {
+            id: "organization-types",
+            label: "Organization Types",
+            path: "/organization-types",
+            icon: CategoryOutlinedIcon,
             permission: PERMISSIONS.ORGANIZATION_MANAGE,
           },
           {
