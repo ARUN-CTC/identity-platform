@@ -23,6 +23,12 @@ export {
   type ResetPasswordInput,
 } from "./auth";
 export { apiRequest, configureApiClient, getApiBaseUrl, type RequestOptions } from "./client";
+export {
+  acceptInvitation,
+  validateInvitation,
+  type AcceptInvitationInput,
+  type ValidateInvitationResult,
+} from "./invitations";
 export { buildContextHeaders, type RequestContext } from "./context";
 export { bootstrapApiClient, refreshSession } from "./config";
 export { getApiErrorMessage } from "./getApiErrorMessage";

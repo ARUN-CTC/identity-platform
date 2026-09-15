@@ -3,6 +3,7 @@ import { createBrowserRouter, Navigate } from "react-router-dom";
 
 import { AppShell } from "@/app/layouts/AppShell";
 import { AuthLayout } from "@/app/layouts/AuthLayout";
+import AcceptInvitationPage from "@/app/pages/AcceptInvitationPage";
 import ForbiddenPage from "@/app/pages/ForbiddenPage";
 import ForgotPasswordPage from "@/app/pages/ForgotPasswordPage";
 import LoginPage from "@/app/pages/LoginPage";
@@ -43,6 +44,7 @@ export const router = createBrowserRouter([
       { path: "/login", element: <LoginPage /> },
       { path: "/forgot-password", element: <ForgotPasswordPage /> },
       { path: "/reset-password", element: <ResetPasswordPage /> },
+      { path: "/accept-invitation", element: <AcceptInvitationPage /> },
       { path: "/403", element: <ForbiddenPage /> },
       { path: "/500", element: <ServerErrorPage /> },
     ],
