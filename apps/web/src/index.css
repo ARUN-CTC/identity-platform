@@ -1,0 +1,16 @@
+/*
+ * Tailwind is imported without its preflight layer — MUI's CssBaseline
+ * (mounted by ThemeModeProvider) owns element resets, so both systems
+ * don't fight over margins/base typography. Only Tailwind's theme +
+ * utility layers are included; use utility classes sparingly for layout
+ * glue in page composition, never inside design-system components (those
+ * use theme tokens via `sx`).
+ */
+@import "tailwindcss/theme" layer(theme);
+@import "tailwindcss/utilities" layer(utilities);
+
+html,
+body,
+#root {
+  height: 100%;
+}
