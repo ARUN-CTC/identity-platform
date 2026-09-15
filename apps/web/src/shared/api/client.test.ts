@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { apiRequest, configureApiClient, ApiError } from "@/shared/api";
 
+/**
+ * Every response mocked here mirrors the REAL backend, confirmed live
+ * against a running instance (2026-09-16): a success response IS the
+ * resource/list directly (no envelope — `ResponseInterceptor` exists in
+ * the backend source but is never registered in `main.ts`), and a failure
+ * is NestJS's own default `{statusCode, message, error?}` shape. See
+ * `client.ts`'s own `NestErrorBody` doc comment.
+ */
 describe("apiRequest", () => {
   beforeEach(() => {
     configureApiClient({ baseUrl: "http://test.local/api/v1" });
@@ -10,13 +18,8 @@ describe("apiRequest", () => {
     vi.unstubAllGlobals();
   });
 
-  it("unwraps `data` from a successful envelope", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({ success: true, message: "ok", data: { id: "1" }, errors: [], traceId: "t", timestamp: "now" }),
-        { status: 200 },
-      ),
-    );
+  it("returns a successful response's body verbatim — there is no envelope to unwrap", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "1" }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await apiRequest<{ id: string }>("/tenants/1");
@@ -29,11 +32,7 @@ describe("apiRequest", () => {
   });
 
   it("serializes query params, dropping empty/undefined values", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ success: true, message: "ok", data: [], errors: [], traceId: "t", timestamp: "now" }), {
-        status: 200,
-      }),
-    );
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify([]), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
     await apiRequest("/users", { query: { page: 1, search: "", status: undefined, limit: 20 } });
@@ -45,18 +44,22 @@ describe("apiRequest", () => {
     expect(calledUrl.searchParams.has("status")).toBe(false);
   });
 
-  it("throws ApiError with the backend's message on a validation failure", async () => {
+  it("returns undefined for an empty response body (e.g. 204/logout) without treating it as a parse failure", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
+
+    const result = await apiRequest("/auth/logout", { method: "POST" });
+    expect(result).toBeUndefined();
+  });
+
+  it("throws ApiError with the backend's message on a validation failure (message as an array — ValidationPipe's real shape)", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
         new Response(
           JSON.stringify({
-            success: false,
-            message: "tenantCode must contain only uppercase letters, numbers, underscores, and hyphens",
-            data: null,
-            errors: ["VALIDATION_FAILED: tenantCode must contain only uppercase letters, numbers, underscores, and hyphens"],
-            traceId: "t",
-            timestamp: "now",
+            statusCode: 400,
+            message: ["tenantCode must contain only uppercase letters, numbers, underscores, and hyphens"],
+            error: "Bad Request",
           }),
           { status: 400 },
         ),
@@ -70,15 +73,10 @@ describe("apiRequest", () => {
     });
   });
 
-  it("flags a 409 response as a conflict", async () => {
+  it("flags a 409 response as a conflict (AppException's real shape — message as a plain string, no `error` key)", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({ success: false, message: "Stale version", data: null, errors: [], traceId: "t", timestamp: "now" }),
-          { status: 409 },
-        ),
-      ),
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ statusCode: 409, message: "Stale version" }), { status: 409 })),
     );
 
     try {
@@ -98,15 +96,7 @@ describe("apiRequest", () => {
 
   describe("ApiError status classification", () => {
     async function requestWithStatus(status: number, message = "error") {
-      vi.stubGlobal(
-        "fetch",
-        vi.fn().mockResolvedValue(
-          new Response(
-            JSON.stringify({ success: false, message, data: null, errors: [], traceId: "t", timestamp: "now" }),
-            { status },
-          ),
-        ),
-      );
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ statusCode: status, message }), { status })));
       try {
         await apiRequest("/users");
         expect.unreachable("apiRequest should have thrown");
@@ -149,10 +139,9 @@ describe("401 handling (onUnauthorized retry)", () => {
     vi.unstubAllGlobals();
   });
 
-  function response(status: number, data: unknown = null) {
-    return new Response(JSON.stringify({ success: status < 300, message: "msg", data, errors: [], traceId: "t", timestamp: "now" }), {
-      status,
-    });
+  function response(status: number, data: unknown = undefined) {
+    const body = status < 300 ? data : { statusCode: status, message: "msg" };
+    return new Response(JSON.stringify(body), { status });
   }
 
   it("retries once after onUnauthorized resolves with a new token, and succeeds", async () => {
@@ -239,13 +228,7 @@ describe("buildContextHeaders", () => {
 
     // A fresh Response per call — Response bodies can only be read once,
     // and this test calls apiRequest twice against the same mock.
-    const fetchMock = vi.fn().mockImplementation(
-      async () =>
-        new Response(
-          JSON.stringify({ success: true, message: "ok", data: null, errors: [], traceId: "t", timestamp: "now" }),
-          { status: 200 },
-        ),
-    );
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify(null), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
     await apiRequest("/users");

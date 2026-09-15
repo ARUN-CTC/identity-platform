@@ -1,4 +1,4 @@
-import { ApiError, type ResponseEnvelope } from "../api/types";
+import { ApiError } from "../api/types";
 
 /**
  * A deliberately SEPARATE, minimal fetch wrapper for the Platform Operator
@@ -12,13 +12,23 @@ import { ApiError, type ResponseEnvelope } from "../api/types";
  * machinery here would risk coupling the two boundaries (e.g. a platform
  * 401 accidentally triggering a *tenant* refresh, or vice versa, if the two
  * ever shared module-level state). This file only reuses what's genuinely
- * shape-only and boundary-agnostic: `ApiError` and the `ResponseEnvelope`
- * type from `shared/api/types.ts`.
+ * shape-only and boundary-agnostic: `ApiError` from `shared/api/types.ts`.
  *
  * Never sends `X-Tenant-Id`/`X-User-Id`/`X-Organization-Id` — a Platform
  * Operator has no tenant context, ever; the only header this client attaches
  * is `Authorization: Bearer <platform access token>`.
+ *
+ * No response envelope to unwrap — confirmed live against a running
+ * backend (2026-09-16): a success response's body IS the resource/list
+ * directly, and a failure is NestJS's own default `{statusCode, message,
+ * error?}` shape (see `shared/api/client.ts`'s `NestErrorBody` for the
+ * identical parsing this file mirrors).
  */
+interface NestErrorBody {
+  statusCode: number;
+  message?: string | string[];
+  error?: string;
+}
 interface PlatformApiClientConfig {
   baseUrl: string;
   getAccessToken?: () => string | undefined;
@@ -71,10 +81,10 @@ function buildUrl(path: string, query?: PlatformRequestOptions["query"]): string
 
 /**
  * The one place every Platform Operator API call funnels through: attaches
- * the platform bearer token, unwraps `ResponseEnvelope`, and throws
- * `ApiError` for both network failures and `success: false` responses —
- * the exact same envelope/error contract the tenant client uses, just
- * carried by an independent implementation.
+ * the platform bearer token and throws `ApiError` for both network
+ * failures and non-2xx responses — the same error contract the tenant
+ * client uses, carried by an independent implementation. A successful
+ * response's parsed JSON body is returned verbatim; there is no envelope.
  */
 export async function platformApiRequest<T>(path: string, options: PlatformRequestOptions = {}): Promise<T> {
   const { method = "GET", body, query, signal } = options;
@@ -104,16 +114,18 @@ export async function platformApiRequest<T>(path: string, options: PlatformReque
     }
   }
 
-  let envelope: ResponseEnvelope<T>;
-  try {
-    envelope = (await response.json()) as ResponseEnvelope<T>;
-  } catch {
-    throw new ApiError("The server returned an unexpected response", response.status, [], undefined);
+  const raw = await response.text();
+  const parsed = raw ? (JSON.parse(raw) as unknown) : undefined;
+
+  if (!response.ok) {
+    const errorBody = parsed as NestErrorBody | undefined;
+    const messages = Array.isArray(errorBody?.message)
+      ? errorBody.message
+      : errorBody?.message
+        ? [errorBody.message]
+        : [`Request failed with status ${response.status}`];
+    throw new ApiError(messages[0], response.status, messages, undefined);
   }
 
-  if (!response.ok || !envelope.success) {
-    throw new ApiError(envelope.message || "Request failed", response.status, envelope.errors ?? [], envelope.traceId);
-  }
-
-  return envelope.data as T;
+  return parsed as T;
 }

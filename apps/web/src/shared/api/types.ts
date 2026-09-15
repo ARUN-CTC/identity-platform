@@ -1,7 +1,16 @@
 /**
- * Mirrors the backend's response envelope exactly (see
- * src/common/interceptors/response-envelope.interface.ts) — every endpoint,
- * success or failure, returns this shape.
+ * ⚠ Not actually applied by the running backend — confirmed live
+ * (2026-09-16): `src/common/interceptors/response.interceptor.ts` and
+ * `src/common/filters/all-exceptions.filter.ts` implement exactly this
+ * shape, but neither is registered anywhere (`main.ts` never calls
+ * `app.useGlobalInterceptors`/`app.useGlobalFilters` for them) — a real
+ * request returns its resource/list body raw, and an error returns
+ * NestJS's own default `{statusCode, message, error?}` shape (see
+ * `client.ts`'s `NestErrorBody`, the type `apiRequest()` actually parses).
+ * The backend's own e2e suite already reads every response this way
+ * (`res.body.x`, never `res.body.data.x`). Kept only as a record of the
+ * backend's own documented (but unwired) intent — nothing in this app
+ * constructs or unwraps this shape anymore.
  */
 export interface ResponseEnvelope<T> {
   success: boolean;

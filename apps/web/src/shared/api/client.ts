@@ -1,5 +1,25 @@
 import { buildContextHeaders, type RequestContext } from "./context";
-import { ApiError, type ResponseEnvelope } from "./types";
+import { ApiError } from "./types";
+
+/**
+ * NestJS's own default `HttpException` JSON body — the actual, real shape
+ * of every response this backend sends. `src/common/interceptors/response.interceptor.ts`
+ * and `src/common/filters/all-exceptions.filter.ts` exist in the backend
+ * source (a documented, designed `{success, message, data, errors, traceId,
+ * timestamp}` envelope) but are never registered in `main.ts`
+ * (`app.useGlobalInterceptors`/`app.useGlobalFilters` — neither call
+ * exists) — confirmed live against a running instance, and consistent
+ * with the backend's own e2e suite, which reads every response body raw
+ * (`res.body.x`, never `res.body.data.x`). A success response is the raw
+ * resource/list itself; a failure is this shape. `message` is a single
+ * string for most errors, but an array of strings for ValidationPipe
+ * failures (one entry per failed field).
+ */
+interface NestErrorBody {
+  statusCode: number;
+  message?: string | string[];
+  error?: string;
+}
 
 interface ApiClientConfig {
   baseUrl: string;
@@ -84,10 +104,14 @@ function buildUrl(path: string, query?: RequestOptions["query"]): string {
 /**
  * The one place every API call funnels through: attaches request-context
  * headers (auth/tenant/user/org — only the ones actually present, see
- * context.ts), unwraps `ResponseEnvelope`, and throws `ApiError` for both
- * network failures and `success: false` responses so callers only ever deal
- * with "got data" or "caught ApiError". Domain modules must never build
- * these headers themselves — that's exactly what this function centralizes.
+ * context.ts), and throws `ApiError` for both network failures and non-2xx
+ * responses so callers only ever deal with "got data" or "caught
+ * ApiError". Domain modules must never build these headers themselves —
+ * that's exactly what this function centralizes.
+ *
+ * There is no envelope to unwrap (see NestErrorBody's own doc comment
+ * above) — a successful response's parsed JSON body IS the value this
+ * function returns, verbatim.
  */
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = "GET", body, query, signal } = options;
@@ -118,16 +142,20 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     }
   }
 
-  const envelope = (await response.json().catch(() => null)) as ResponseEnvelope<T> | null;
+  // A 204/empty body parses to `undefined` here — real for DELETE/some
+  // POST actions (e.g. logout) — never treated as a parse failure.
+  const raw = await response.text();
+  const parsed = raw ? (JSON.parse(raw) as unknown) : undefined;
 
-  if (!response.ok || !envelope || !envelope.success) {
-    throw new ApiError(
-      envelope?.message ?? `Request failed with status ${response.status}`,
-      response.status,
-      envelope?.errors ?? [],
-      envelope?.traceId,
-    );
+  if (!response.ok) {
+    const errorBody = parsed as NestErrorBody | undefined;
+    const messages = Array.isArray(errorBody?.message)
+      ? errorBody.message
+      : errorBody?.message
+        ? [errorBody.message]
+        : [`Request failed with status ${response.status}`];
+    throw new ApiError(messages[0], response.status, messages, undefined);
   }
 
-  return envelope.data;
+  return parsed as T;
 }

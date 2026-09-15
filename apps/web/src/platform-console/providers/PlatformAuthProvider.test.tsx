@@ -5,10 +5,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { PlatformAuthProvider, usePlatformAuth } from "./PlatformAuthProvider";
 
 function jsonResponse(status: number, data: unknown, message = "ok") {
-  return new Response(
-    JSON.stringify({ success: status < 300, message, data, errors: status < 300 ? [] : [`ERROR: ${message}`], traceId: "t", timestamp: "now" }),
-    { status },
-  );
+  // Real backend shape (confirmed live, 2026-09-16): a success response IS
+  // the resource/list directly; a failure is NestJS's own default
+  // {statusCode, message} shape — there is no envelope (see
+  // shared/api/client.ts's NestErrorBody doc comment).
+  const body = status < 300 ? data : { statusCode: status, message };
+  return new Response(JSON.stringify(body), { status });
 }
 
 function Probe() {
