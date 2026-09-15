@@ -1,10 +1,21 @@
 -- Security (IAM) domain — see database/prisma/schema/security.prisma.
 -- Copied near-verbatim from TravelOS (packages/database/domains/security/ddl),
 -- classified REUSABLE. See docs/IDENTITY_SOURCE_INVENTORY.md.
-
+--
+-- PHASE 2A (docs/PHASE_2A.md, ADR-002): security_user became a global
+-- Identity — no tenant_id column any more, email is globally unique. Its
+-- relationship to a tenant/organization is exclusively through the
+-- `membership` table (created further down this file). Deliberately no RLS
+-- on this table: RLS here is a tenant_id-column mechanism
+-- (database/shared/002_functions.sql), and a global identity has no single
+-- tenant_id to filter by — exactly the same reasoning security_permission
+-- already documents for itself ("global catalog ... no RLS"), just for
+-- identity rows instead of permission rows. Tenant-boundary enforcement for
+-- *who can see which users* moves to the application layer, joined through
+-- membership (see UsersRepository) — see docs/PHASE_2A.md, "Global Identity
+-- RLS posture" for the full reasoning and its tested consequences.
 CREATE TABLE security_user (
     id UUID PRIMARY KEY DEFAULT generate_uuid(),
-    tenant_id UUID NOT NULL REFERENCES tenant(id),
 
     email VARCHAR(255) NOT NULL,
     username VARCHAR(50),
@@ -30,11 +41,9 @@ CREATE TABLE security_user (
     deleted_by UUID,
     version BIGINT NOT NULL DEFAULT 1,
 
-    CONSTRAINT uk_security_user_email UNIQUE (tenant_id, email)
+    CONSTRAINT uk_security_user_email UNIQUE (email)
 );
-CREATE INDEX idx_security_user_tenant ON security_user(tenant_id);
 CALL apply_standard_triggers('security_user');
-CALL apply_tenant_rls('security_user');
 
 CREATE TABLE security_role (
     id UUID PRIMARY KEY DEFAULT generate_uuid(),
@@ -100,6 +109,13 @@ CREATE INDEX idx_security_role_permission_role ON security_role_permission(role_
 CREATE INDEX idx_security_role_permission_permission ON security_role_permission(permission_id);
 -- No tenant_id column (role_id already carries tenant scoping transitively) — no RLS.
 
+-- PHASE 2A: user_id now references a global Identity. This row no longer by
+-- itself proves "user_id belongs to tenant_id" — a grant is only effective
+-- when the user also holds an ACTIVE membership row covering tenant_id (for
+-- a tenant-wide grant, organization_id NULL here) or this exact
+-- organization_id. Enforced in application code (UserRolesRepository),
+-- documented as a known limitation in docs/PHASE_2A.md rather than a second
+-- DB-level check, to avoid duplicating the same invariant in two places.
 CREATE TABLE security_user_role (
     id UUID PRIMARY KEY DEFAULT generate_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenant(id),
@@ -178,10 +194,14 @@ CREATE INDEX idx_security_password_reset_token_tenant ON security_password_reset
 CREATE INDEX idx_security_password_reset_token_user ON security_password_reset_token(user_id);
 CALL apply_tenant_rls('security_password_reset_token');
 
+-- PHASE 2A: organization_id (required) — an invitation onboards a global
+-- Identity into one specific Organization's Membership, not "into a tenant"
+-- in the abstract. See docs/PHASE_2A.md.
 CREATE TABLE security_user_invitation_token (
     id UUID PRIMARY KEY DEFAULT generate_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenant(id),
     user_id UUID NOT NULL REFERENCES security_user(id) ON DELETE CASCADE,
+    organization_id UUID NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
 
     token_hash TEXT NOT NULL UNIQUE,
 
@@ -191,6 +211,7 @@ CREATE TABLE security_user_invitation_token (
 );
 CREATE INDEX idx_security_user_invitation_token_tenant ON security_user_invitation_token(tenant_id);
 CREATE INDEX idx_security_user_invitation_token_user ON security_user_invitation_token(user_id);
+CREATE INDEX idx_security_user_invitation_token_org ON security_user_invitation_token(organization_id);
 CALL apply_tenant_rls('security_user_invitation_token');
 
 CREATE TABLE security_login_attempt (

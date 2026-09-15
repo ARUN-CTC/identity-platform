@@ -1,0 +1,25 @@
+// Phase 2B.2 — Product Entitlement. Tenant-scoped (RLS via apply_tenant_rls,
+// same as Organization/Membership) — see database/ddl/007_tenant_product_entitlement.sql
+// and docs/adr/ADR-011-product-entitlement-model.md.
+
+model TenantProductEntitlement {
+  id        String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  tenantId  String  @map("tenant_id") @db.Uuid
+  tenant    Tenant  @relation(fields: [tenantId], references: [id])
+  productId String  @map("product_id") @db.Uuid
+  product   Product @relation(fields: [productId], references: [id])
+
+  status String @default("ACTIVE")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  createdBy String?   @map("created_by") @db.Uuid
+  updatedAt DateTime? @map("updated_at") @db.Timestamptz
+  updatedBy String?   @map("updated_by") @db.Uuid
+  version   BigInt    @default(1)
+
+  @@unique([tenantId, productId], map: "uk_tenant_product_entitlement")
+  @@index([tenantId], map: "idx_tenant_product_entitlement_tenant")
+  @@index([productId], map: "idx_tenant_product_entitlement_product")
+  @@index([status], map: "idx_tenant_product_entitlement_status")
+  @@map("tenant_product_entitlement")
+}
