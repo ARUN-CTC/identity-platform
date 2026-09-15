@@ -31,3 +31,26 @@ This is a deliberately minimal architecture document — Phase 1 is scoped to is
 ## What Phase 1 deliberately does not include
 
 SAML/OIDC/OAuth authorization server, Passkeys/WebAuthn, a policy/rules engine, organization-context switching (a signed-in user acting "as" a specific organization mid-session), multi-region or production-HA deployment, Kubernetes manifests, advanced identity federation. See `docs/PHASE_1.md`'s Phase 2 recommendations for what to design next, deliberately, rather than accreting ad hoc.
+
+
+                    Identity Platform
+                           │
+              ┌────────────┴────────────┐
+              │                         │
+        Human Identity             Machine Identity
+              │                         │
+       Authorization Code          Client Credentials
+            + PKCE                       │
+              │                    ServiceAccount
+              │                         │
+          OIDC / ID Token        Tenant Grant
+              │                         │
+        Access Token ────────────────┐   │
+              │                      │   │
+              └──────────┬───────────┘   │
+                         ↓               ↓
+                 Resource Server   Product Entitlement
+                         │               │
+                         └───────┬───────┘
+                                 ↓
+                         Product Authorization
