@@ -1,6 +1,6 @@
 import '../src/common/bigint-json.polyfill';
 
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ClsMiddleware } from 'nestjs-cls';
 import { randomUUID } from 'crypto';
@@ -60,8 +60,11 @@ describe('Phase 2D — Tenant Registry security remediation (e2e)', () => {
     const role = await prisma.securityRole.findFirstOrThrow({ where: { roleCode, tenantId: null } });
     await prismaContext.runInContext((tx) => tx.securityUserRole.create({ data: { tenantId: tenantA.id, userId: user.id, roleId: role.id } }), tenantA.id);
     const res = await request(app.getHttpServer()).post('/api/v1/auth/login').send({ tenantCode: tenantA.tenantCode, email: user.email, password: PASSWORD });
-    expect(res.body.data?.accessToken ?? res.body.accessToken).toBeDefined();
-    return res.body.data?.accessToken ?? res.body.accessToken;
+    // Real backend shape (confirmed live, 2026-09-16): a success response IS
+    // the resource directly — there is no `{success, data}` envelope (the
+    // ResponseInterceptor that would apply one is never registered).
+    expect(res.body.accessToken).toBeDefined();
+    return res.body.accessToken;
   }
 
   async function makeOperator(email: string, permissionCodes: string[]) {
@@ -85,6 +88,15 @@ describe('Phase 2D — Tenant Registry security remediation (e2e)', () => {
     app = moduleFixture.createNestApplication();
     app.use(new ClsMiddleware().use);
     app.setGlobalPrefix('api/v1', { exclude: ['health'] });
+    // Mirrors main.ts's bootstrap() exactly. Without this, DTO
+    // whitelisting/forbidNonWhitelisted never runs in this in-memory app —
+    // confirmed live (2026-09-16) that most of this repo's other e2e specs
+    // omit it too (only phase2d9-oauth-operational-hardening registers it),
+    // silently letting unknown/forbidden body fields (e.g. `status` on
+    // UpdateOwnTenantDto, deliberately excluded from that DTO) pass straight
+    // through to Prisma instead of being rejected with 400 — the real
+    // running server (main.ts) rejects them correctly.
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true }));
     await app.init();
 
     prisma = app.get(PrismaService);
@@ -119,13 +131,13 @@ describe('Phase 2D — Tenant Registry security remediation (e2e)', () => {
 
       const getRes = await request(app.getHttpServer()).get('/api/v1/tenants/me').set('Authorization', `Bearer ${token}`);
       expect(getRes.status).toBe(200);
-      expect(getRes.body.data.id).toBe(tenantA.id);
-      expect(getRes.body.data.tenantCode).toBe(tenantA.tenantCode);
+      expect(getRes.body.id).toBe(tenantA.id);
+      expect(getRes.body.tenantCode).toBe(tenantA.tenantCode);
 
       const patchRes = await request(app.getHttpServer()).patch('/api/v1/tenants/me').set('Authorization', `Bearer ${token}`).send({ tenantName: 'Renamed by self-service' });
       expect(patchRes.status).toBe(200);
-      expect(patchRes.body.data.id).toBe(tenantA.id);
-      expect(patchRes.body.data.tenantName).toBe('Renamed by self-service');
+      expect(patchRes.body.id).toBe(tenantA.id);
+      expect(patchRes.body.tenantName).toBe('Renamed by self-service');
 
       // Tenant B, untouched.
       const tenantBFresh = await prisma.tenant.findUniqueOrThrow({ where: { id: tenantB.id } });
@@ -175,7 +187,7 @@ describe('Phase 2D — Tenant Registry security remediation (e2e)', () => {
         .query({ eventType: 'TENANT_PROFILE_UPDATED' })
         .set('Authorization', `Bearer ${token}`);
       expect(events.status).toBe(200);
-      expect(events.body.data.items.some((e: { resourceId: string }) => e.resourceId === tenantA.id)).toBe(true);
+      expect(events.body.items.some((e: { resourceId: string }) => e.resourceId === tenantA.id)).toBe(true);
     });
   });
 
@@ -203,28 +215,32 @@ describe('Phase 2D — Tenant Registry security remediation (e2e)', () => {
 
       const list = await request(app.getHttpServer()).get('/api/v1/platform/tenants').set('Authorization', `Bearer ${token}`);
       expect(list.status).toBe(200);
-      expect(list.body.data.items.some((t: { id: string }) => t.id === tenantA.id)).toBe(true);
-      expect(list.body.data.items.some((t: { id: string }) => t.id === tenantB.id)).toBe(true);
+      expect(list.body.items.some((t: { id: string }) => t.id === tenantA.id)).toBe(true);
+      expect(list.body.items.some((t: { id: string }) => t.id === tenantB.id)).toBe(true);
 
       const getB = await request(app.getHttpServer()).get(`/api/v1/platform/tenants/${tenantB.id}`).set('Authorization', `Bearer ${token}`);
       expect(getB.status).toBe(200);
-      expect(getB.body.data.id).toBe(tenantB.id);
+      expect(getB.body.id).toBe(tenantB.id);
 
       const patchB = await request(app.getHttpServer()).patch(`/api/v1/platform/tenants/${tenantB.id}`).set('Authorization', `Bearer ${token}`).send({ tenantName: 'Renamed by platform operator' });
       expect(patchB.status).toBe(200);
-      expect(patchB.body.data.tenantName).toBe('Renamed by platform operator');
+      expect(patchB.body.tenantName).toBe('Renamed by platform operator');
 
+      // POST :id/suspend|activate have no @HttpCode override, so — like
+      // every other action-style POST in this codebase (users
+      // activate/suspend/deactivate included) — they return Nest's default
+      // 201 for POST, not 200.
       const suspendB = await request(app.getHttpServer()).post(`/api/v1/platform/tenants/${tenantB.id}/suspend`).set('Authorization', `Bearer ${token}`);
-      expect(suspendB.status).toBe(200);
-      expect(suspendB.body.data.status).toBe('SUSPENDED');
+      expect(suspendB.status).toBe(201);
+      expect(suspendB.body.status).toBe('SUSPENDED');
 
       const activateB = await request(app.getHttpServer()).post(`/api/v1/platform/tenants/${tenantB.id}/activate`).set('Authorization', `Bearer ${token}`);
-      expect(activateB.status).toBe(200);
-      expect(activateB.body.data.status).toBe('ACTIVE');
+      expect(activateB.status).toBe(201);
+      expect(activateB.body.status).toBe('ACTIVE');
 
       const create = await request(app.getHttpServer()).post('/api/v1/platform/tenants').set('Authorization', `Bearer ${token}`).send({ tenantCode: `NEW-${suffix}`, tenantName: 'New Tenant' });
       expect(create.status).toBe(201);
-      const newTenantId = create.body.data.id;
+      const newTenantId = create.body.id;
 
       const deleteRes = await request(app.getHttpServer()).delete(`/api/v1/platform/tenants/${newTenantId}`).set('Authorization', `Bearer ${token}`);
       expect(deleteRes.status).toBe(200);
@@ -249,14 +265,14 @@ describe('Phase 2D — Tenant Registry security remediation (e2e)', () => {
 
       const create = await request(app.getHttpServer()).post('/api/v1/platform/tenants').set('Authorization', `Bearer ${token}`).send({ tenantCode: `AUD-${suffix}`, tenantName: 'Audited Tenant' });
       expect(create.status).toBe(201);
-      const createdId = create.body.data.id;
+      const createdId = create.body.id;
 
       const platformEvents = await request(app.getHttpServer())
         .get('/api/v1/platform/audit-events')
         .query({ eventType: 'TENANT_CREATED' })
         .set('Authorization', `Bearer ${token}`);
       expect(platformEvents.status).toBe(200);
-      expect(platformEvents.body.data.items.some((e: { resourceId: string }) => e.resourceId === createdId)).toBe(true);
+      expect(platformEvents.body.items.some((e: { resourceId: string }) => e.resourceId === createdId)).toBe(true);
 
       // Never visible to a tenant caller's own Security & Audit — a platform
       // event's tenantId is NULL by construction (RLS enforces this at the
@@ -267,7 +283,7 @@ describe('Phase 2D — Tenant Registry security remediation (e2e)', () => {
         .query({ eventType: 'TENANT_CREATED' })
         .set('Authorization', `Bearer ${tenantAToken}`);
       expect(tenantEvents.status).toBe(200);
-      expect(tenantEvents.body.data.items.length).toBe(0);
+      expect(tenantEvents.body.items.length).toBe(0);
     });
   });
 });
