@@ -11,6 +11,17 @@ import { UserRolesService } from '../../users/services';
  * @RequirePermissions nor @RequireRoles are unrestricted beyond
  * authentication itself. @RequirePermissions codes are AND'd; @RequireRoles
  * codes are OR'd.
+ *
+ * PHASE 2C (docs/ORGANIZATION_CONTEXT_ARCHITECTURE.md): now resolves grants
+ * against the caller's currently SELECTED organization
+ * (context.organizationId), not tenant-wide grants only — this is what
+ * makes an organization-scoped role grant actually apply once a user has
+ * selected that organization as their active context ("Organization Role
+ * Resolution": authorization resolves against Current User + Current
+ * Organization, never "any organization the user happens to belong to").
+ * resolveGrants() itself re-validates Membership and Organization status
+ * live on every call — a stale/revoked context never survives this check,
+ * regardless of what the presented token's own claim says.
  */
 @Injectable()
 export class PermissionsGuard implements CanActivate {
@@ -40,7 +51,7 @@ export class PermissionsGuard implements CanActivate {
       throw new ForbiddenException('Authentication required');
     }
 
-    const grants = await this.userRolesService.resolveGrants(tenantId, userId);
+    const grants = await this.userRolesService.resolveGrants(tenantId, userId, this.context.organizationId ?? undefined);
 
     if (requiredRoles?.length && !requiredRoles.some((role) => grants.roleCodes.includes(role))) {
       throw new ForbiddenException('Insufficient role to access this resource');

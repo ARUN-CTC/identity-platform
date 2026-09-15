@@ -19,11 +19,12 @@ export class SessionsRepository {
     deviceInfo: string | undefined,
     ipAddress: string | undefined,
     rememberMe = false,
+    organizationId?: string | null,
   ): Promise<SecuritySession> {
     return this.prismaContext.runInContext(
       (tx) =>
         tx.securitySession.create({
-          data: { tenantId, userId, expiresAt, deviceInfo, ipAddress, rememberMe },
+          data: { tenantId, userId, expiresAt, deviceInfo, ipAddress, rememberMe, organizationId },
         }),
       tenantId,
     );
@@ -72,6 +73,23 @@ export class SessionsRepository {
           where: { tenantId, userId, revokedAt: null },
           data: { revokedAt: new Date(), revokedReason: reason },
         }),
+      tenantId,
+    );
+  }
+
+  /**
+   * PHASE 2C (docs/ORGANIZATION_CONTEXT_ARCHITECTURE.md) — mutates a
+   * session's currently-selected organization IN PLACE. Only valid for a
+   * same-tenant context switch (the target organization belongs to the same
+   * tenant this session already belongs to) — a cross-tenant switch instead
+   * revokes this session and creates a brand-new one under the target
+   * tenant, since a security_session row cannot change its own tenant_id
+   * (nor should it: tenant_id is the RLS partition key). Pass `null` to
+   * clear back to tenant-wide (no organization selected).
+   */
+  async updateOrganization(tenantId: string, id: string, organizationId: string | null): Promise<void> {
+    await this.prismaContext.runInContext(
+      (tx) => tx.securitySession.updateMany({ where: { id, tenantId }, data: { organizationId } }),
       tenantId,
     );
   }

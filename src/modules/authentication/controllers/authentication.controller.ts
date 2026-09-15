@@ -7,6 +7,7 @@ import { ForgotPasswordDto } from '../dto/forgot-password.dto';
 import { LoginDto } from '../dto/login.dto';
 import { RefreshTokenDto } from '../dto/refresh-token.dto';
 import { ResetPasswordDto } from '../dto/reset-password.dto';
+import { SwitchOrganizationContextDto } from '../dto/switch-organization-context.dto';
 import { MeEntity } from '../entities/me.entity';
 import { AuthenticationService } from '../services/authentication.service';
 
@@ -52,7 +53,45 @@ export class AuthenticationController {
       "Identity comes exclusively from the authenticated JWT (RequestContextService) — there is no way to request another user's context.",
   })
   getMe(): Promise<MeEntity> {
-    return this.authenticationService.getMe(this.context.requireTenantId(), this.context.userId!, this.context.sessionId!);
+    return this.authenticationService.getMe(
+      this.context.requireTenantId(),
+      this.context.userId!,
+      this.context.sessionId!,
+      this.context.organizationId,
+    );
+  }
+
+  @Post('context/switch')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: "Switch the caller's active organization context",
+    description:
+      'The only client-supplied input is organizationId — which tenant it belongs to, and whether the caller ' +
+      'actually has an ACTIVE membership there, are resolved and re-validated entirely server-side. Returns a ' +
+      'fresh access/refresh token pair (same shape as login/refresh) reflecting the new context; the old refresh ' +
+      'token is invalidated.',
+  })
+  switchContext(@Body() dto: SwitchOrganizationContextDto) {
+    return this.authenticationService.switchOrganizationContext(
+      this.context.requireTenantId(),
+      this.context.userId!,
+      this.context.sessionId!,
+      dto.organizationId,
+    );
+  }
+
+  @Post('context/clear')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Return to tenant-wide context (no organization selected)',
+    description: 'Returns a fresh access/refresh token pair with no organizationId claim.',
+  })
+  clearContext() {
+    return this.authenticationService.clearOrganizationContext(
+      this.context.requireTenantId(),
+      this.context.userId!,
+      this.context.sessionId!,
+    );
   }
 
   @Post('logout')

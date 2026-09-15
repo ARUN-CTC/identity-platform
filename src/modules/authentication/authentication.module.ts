@@ -1,11 +1,13 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '../jwt/jwt.module';
+import { MembershipsModule } from '../memberships/memberships.module';
+import { OrganizationsModule } from '../organizations/organizations.module';
 import { SecurityAuditModule } from '../security-audit/security-audit.module';
 import { SessionsModule } from '../sessions/sessions.module';
 import { TenantsModule } from '../tenants/tenants.module';
 import { UsersModule } from '../users/users.module';
-import { AuthenticationController } from './controllers';
+import { AuthenticationController, MeController } from './controllers';
 import { JwtAuthGuard, PermissionsGuard } from './guards';
 import { AuthenticationService } from './services';
 
@@ -19,8 +21,8 @@ import { AuthenticationService } from './services';
  * already set).
  */
 @Module({
-  imports: [TenantsModule, UsersModule, SessionsModule, JwtModule, SecurityAuditModule],
-  controllers: [AuthenticationController],
+  imports: [TenantsModule, UsersModule, SessionsModule, JwtModule, SecurityAuditModule, MembershipsModule, OrganizationsModule],
+  controllers: [AuthenticationController, MeController],
   providers: [
     AuthenticationService,
     JwtAuthGuard,

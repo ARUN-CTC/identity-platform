@@ -74,6 +74,13 @@ export class JwtAuthGuard implements CanActivate {
     this.context.setTenantId(claims.tenantId);
     this.context.setUserId(claims.sub);
     this.context.setSessionId(claims.sessionId);
+    // Phase 2C: propagated as-is from the claim — a convenience/identity
+    // fact, not itself trusted as authorization. PermissionsGuard/
+    // UserRolesRepository.resolveGrants() re-validate the Membership and
+    // Organization it names, live, against the database, on every request
+    // that actually needs an authorization decision — see
+    // docs/ORGANIZATION_CONTEXT_ARCHITECTURE.md.
+    this.context.setOrganizationId(claims.organizationId ?? undefined);
 
     return true;
   }

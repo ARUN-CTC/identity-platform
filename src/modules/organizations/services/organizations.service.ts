@@ -22,6 +22,17 @@ export class OrganizationsService {
     return organization;
   }
 
+  /**
+   * PHASE 2C — explicit-tenant lookup for flows that resolve an
+   * organization's tenant themselves (context-switch, refresh's live
+   * re-validation) rather than reading tenantId from ambient request
+   * context. Returns null rather than throwing — callers here need to
+   * distinguish "not found" from other conditions themselves (deny vs. 404).
+   */
+  findByIdForTenant(tenantId: string, id: string): Promise<Organization | null> {
+    return this.repository.findByIdForTenant(tenantId, id);
+  }
+
   create(dto: CreateOrganizationDto): Promise<Organization> {
     return this.repository.create(dto);
   }

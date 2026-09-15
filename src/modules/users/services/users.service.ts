@@ -1,6 +1,8 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
-import { SecurityUser } from '@prisma/client';
+import { Prisma, SecurityUser } from '@prisma/client';
 import { RequestContextService, PaginatedResult, AppException, ResourceNotFoundException, hashPassword } from '../../../common';
+import { MembershipsService } from '../../memberships/services';
+import { OrganizationsService } from '../../organizations/services/organizations.service';
 import { SecurityEventsService } from '../../security-audit/services';
 import { SessionsService } from '../../sessions/services';
 import { UserInvitationsService } from '../invitations/services';
@@ -43,6 +45,8 @@ export class UsersService {
     private readonly securityEvents: SecurityEventsService,
     private readonly sessions: SessionsService,
     private readonly invitations: UserInvitationsService,
+    private readonly memberships: MembershipsService,
+    private readonly organizationsService: OrganizationsService,
   ) {}
 
   async list(query: UserQueryDto): Promise<PaginatedResult<SecurityUser>> {
@@ -58,38 +62,60 @@ export class UsersService {
     return this.sanitize(user);
   }
 
-  /** Internal — includes passwordHash. Only AuthenticationService may see it. */
-  async findAuthRecord(tenantId: string, email: string): Promise<SecurityUser | null> {
-    return this.repository.findByEmailInTenant(tenantId, email);
+  /** Internal — includes passwordHash. Only AuthenticationService/PlatformAuthenticationService may see it. Global lookup — no tenant scoping (docs/PHASE_2A.md); the caller separately checks tenant membership (or Platform Operator status). */
+  async findAuthRecord(email: string): Promise<SecurityUser | null> {
+    return this.repository.findByEmail(email);
   }
 
-  async findAuthRecordById(tenantId: string, userId: string): Promise<SecurityUser | null> {
-    return this.repository.findByIdInTenant(tenantId, userId);
+  /** Global lookup by id, requiring an ACTIVE membership in tenantId — the refresh/change-password equivalent of login's membership check. */
+  async findAuthRecordInTenant(tenantId: string, userId: string): Promise<SecurityUser | null> {
+    return this.repository.findByIdWithTenantMembership(tenantId, userId);
   }
 
-  async recordFailedLogin(tenantId: string, userId: string, lockedUntil: Date | null): Promise<void> {
-    await this.repository.recordFailedLogin(tenantId, userId, lockedUntil);
+  /** Phase 2B.1 — global lookup by id, sanitized (no passwordHash), no tenant scoping. Used by PlatformAuthenticationService, which has no tenant context to check against. */
+  async findGlobalById(userId: string): Promise<SecurityUser | null> {
+    const user = await this.repository.findByIdGlobal(userId);
+    return user ? this.sanitize(user) : null;
   }
 
-  async recordSuccessfulLogin(tenantId: string, userId: string): Promise<void> {
-    await this.repository.recordSuccessfulLogin(tenantId, userId);
+  /**
+   * Phase 2B.1 — for PlatformOperatorsService only: "does this email
+   * already resolve to an existing, already-activated global Identity."
+   * Deliberately returns only what a cross-module caller needs (id,
+   * whether a password is set) — never the passwordHash itself, which
+   * stays inside this service/AuthenticationService's own trust boundary.
+   */
+  async findGlobalIdentitySummaryByEmail(email: string): Promise<{ id: string; email: string; hasPassword: boolean } | null> {
+    const user = await this.repository.findByEmail(email);
+    if (!user) {
+      return null;
+    }
+    return { id: user.id, email: user.email, hasPassword: !!user.passwordHash };
+  }
+
+  async recordFailedLogin(userId: string, lockedUntil: Date | null): Promise<void> {
+    await this.repository.recordFailedLogin(userId, lockedUntil);
+  }
+
+  async recordSuccessfulLogin(userId: string): Promise<void> {
+    await this.repository.recordSuccessfulLogin(userId);
   }
 
   async updatePassword(userId: string, passwordHash: string): Promise<void> {
     await this.repository.updatePassword(userId, passwordHash);
   }
 
-  async updatePasswordInTenant(tenantId: string, userId: string, passwordHash: string): Promise<void> {
-    await this.repository.updatePasswordInTenant(tenantId, userId, passwordHash);
-  }
-
   /**
    * The ONLY user-creation path UsersController (the public API) calls —
-   * invitation-only, unconditionally. Every call creates the user
-   * PROVISIONED with no password and sends an invitation so the user sets
-   * their own — see UserInvitationsService. For the one other legitimate
-   * caller (tenant bootstrap admin-user creation), see
-   * createWithBootstrapPassword() below instead.
+   * invitation-only, unconditionally. Every call onboards the given email
+   * into `dto.organizationId`: a brand-new global Identity is created
+   * PROVISIONED with no password and sent an invitation (see
+   * UserInvitationsService); an email that already resolves to an existing
+   * global Identity (this person already has an account via another
+   * tenant/organization — docs/IDENTITY_DOMAIN_MODEL.md §2.1) instead gets
+   * a new Membership attached to that same Identity — see createInternal().
+   * For the one other legitimate caller (tenant bootstrap admin-user
+   * creation), see createWithBootstrapPassword() below instead.
    */
   async create(dto: CreateUserDto): Promise<SecurityUser> {
     return this.createInternal(dto, null);
@@ -108,24 +134,73 @@ export class UsersService {
     password: string;
     firstName: string;
     lastName: string;
+    organizationId: string;
   }): Promise<SecurityUser> {
     return this.createInternal(input, await hashPassword(input.password));
   }
 
-  private async createInternal(dto: CreateUserInput, passwordHash: string | null): Promise<SecurityUser> {
-    // Duplicate (tenantId, email) surfaces as a clean 409 via the global Prisma-unique-violation mapping.
-    const user = await this.repository.create(dto, passwordHash);
+  private async createInternal(
+    dto: CreateUserInput & { organizationId: string },
+    passwordHash: string | null,
+  ): Promise<SecurityUser> {
     const tenantId = this.context.requireTenantId();
+    // RLS-scoped existence check — 404s an organizationId from another tenant exactly like any other org-scoped write.
+    await this.organizationsService.findOne(dto.organizationId);
+
+    let user = await this.repository.findByEmail(dto.email);
+    const isNewIdentity = !user;
+    if (!user) {
+      try {
+        user = await this.repository.create(dto, passwordHash);
+      } catch (err) {
+        // Phase 2D.11 (docs/PRODUCTION_READINESS.md §Error handling) — the
+        // findByEmail check above narrows, but does not eliminate, the race
+        // between two concurrent requests for the same brand-new email; the
+        // unique constraint on security_user.email is the actual authority.
+        // No global P2002 filter is wired in this codebase, so without this
+        // catch the race's loser would surface as an unhandled 500 instead
+        // of the same conflict semantics the passwordHash branch below
+        // already gives a duplicate.
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+          throw new AppException('IAM_EMAIL_ALREADY_REGISTERED', `An account for '${dto.email}' already exists`, HttpStatus.CONFLICT);
+        }
+        throw err;
+      }
+    } else if (passwordHash) {
+      // Only createWithBootstrapPassword ever passes a passwordHash, and it
+      // exists to bootstrap a brand-new Identity — colliding with one that
+      // already exists is a genuine conflict, never a "just add a
+      // membership" case (this caller supplied a password for someone who
+      // may already have one).
+      throw new AppException(
+        'IAM_EMAIL_ALREADY_REGISTERED',
+        `An account for '${dto.email}' already exists`,
+        HttpStatus.CONFLICT,
+      );
+    }
+
+    // Reusing an existing, already-activated global Identity: they're a
+    // proven account already (they have a password), so the new membership
+    // can go straight to ACTIVE with no invitation-accept step. A brand-new
+    // Identity, or an existing one still mid-setup elsewhere (no password
+    // yet), gets an INVITED membership completed via the same
+    // invitation-accept flow Phase 1 already had.
+    const membershipStatus = user.passwordHash ? 'ACTIVE' : 'INVITED';
+    await this.memberships.create(tenantId, dto.organizationId, user.id, membershipStatus);
+
     await this.securityEvents.record({
       tenantId,
       actorUserId: this.context.userId,
       eventType: 'iam.user_created',
       resourceType: 'SecurityUser',
       resourceId: user.id,
-      metadata: { email: user.email, invited: !passwordHash },
+      metadata: { email: user.email, organizationId: dto.organizationId, isNewIdentity, invited: membershipStatus === 'INVITED' },
     });
-    if (!passwordHash) {
-      await this.invitations.sendInvitation(tenantId, this.context.userId, user);
+
+    if (membershipStatus === 'INVITED') {
+      await this.invitations.sendInvitation(tenantId, this.context.userId, user, dto.organizationId);
+    } else {
+      await this.invitations.notifyAddedToOrganization(user);
     }
     return this.sanitize(user);
   }
@@ -135,6 +210,24 @@ export class UsersService {
     return this.sanitize(await this.repository.update(id, dto));
   }
 
+  /**
+   * PHASE 2A NOTE: activate/suspend/deactivate act on the global Identity's
+   * own account status — since a single Identity can now hold Memberships
+   * in more than one Tenant (docs/IDENTITY_DOMAIN_MODEL.md §2.1), suspending
+   * or deactivating a user here affects them everywhere they have a
+   * Membership, not just in the calling admin's own tenant. Whether that is
+   * actually the right behavior for a genuinely multi-tenant person (a
+   * consultant should likely be suspendable from one tenant without losing
+   * access to another) is a real, undecided question — it depends on how a
+   * "suspended in Tenant A, active in Tenant B" Identity should behave at
+   * login, which is exactly the kind of cross-cutting question
+   * docs/ORGANIZATION_CONTEXT.md and Phase 2C are scoped to resolve, not
+   * something to guess at here. Documented as a known limitation
+   * (docs/PHASE_2A.md) rather than silently redesigned. To remove a user
+   * from just one organization without touching their global account,
+   * use MembershipsController's status endpoint
+   * (PATCH /organizations/:organizationId/members/:userId) instead.
+   */
   async activate(id: string): Promise<SecurityUser> {
     return this.applyLifecycleAction(id, 'activate');
   }
@@ -152,8 +245,8 @@ export class UsersService {
     await this.repository.remove(id);
   }
 
-  async resendInvitation(id: string): Promise<void> {
-    await this.invitations.resendInvitation(this.context.requireTenantId(), this.context.userId, id);
+  async resendInvitation(id: string, organizationId: string): Promise<void> {
+    await this.invitations.resendInvitation(this.context.requireTenantId(), this.context.userId, id, organizationId);
   }
 
   private async applyLifecycleAction(id: string, action: UserLifecycleAction): Promise<SecurityUser> {

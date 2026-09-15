@@ -1,9 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 // passwordHash is never included — see UsersService.sanitize().
+// PHASE 2A: no tenantId — SecurityUser is a global Identity now
+// (docs/PHASE_2A.md); its relationship to a tenant is via Membership.
 export class UserEntity {
   @ApiProperty() id: string;
-  @ApiProperty() tenantId: string;
   @ApiProperty() email: string;
   @ApiPropertyOptional() username?: string | null;
   @ApiPropertyOptional() firstName?: string | null;

@@ -12,6 +12,15 @@ interface RecordEventInput {
   ipAddress?: string;
   userAgent?: string;
   correlationId?: string;
+  /**
+   * Phase 2B.1 — 'PLATFORM' events must never carry a tenantId (enforced by
+   * security_event's own RLS policy, database/ddl/006_platform_operator.sql
+   * — a mismatched combination is rejected by the database, not just
+   * silently accepted). Defaults to 'TENANT', unchanged behavior for every
+   * pre-existing call site. See docs/PLATFORM_OPERATOR_ARCHITECTURE.md,
+   * "Platform audit model".
+   */
+  scope?: 'TENANT' | 'PLATFORM';
 }
 
 interface RecordLoginAttemptInput {
@@ -40,6 +49,11 @@ export class SecurityEventsService {
       (tx) => tx.securityEvent.create({ data: input as Prisma.SecurityEventUncheckedCreateInput }),
       input.tenantId,
     );
+  }
+
+  /** Convenience wrapper — same as record({...input, scope: 'PLATFORM'}), just harder to accidentally pass a tenantId alongside by mistake. */
+  async recordPlatformEvent(input: Omit<RecordEventInput, 'scope' | 'tenantId'>): Promise<void> {
+    await this.record({ ...input, scope: 'PLATFORM' });
   }
 
   async recordLoginAttempt(input: RecordLoginAttemptInput): Promise<void> {

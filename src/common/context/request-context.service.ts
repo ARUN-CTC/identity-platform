@@ -52,4 +52,41 @@ export class RequestContextService {
   setTraceId(traceId: string): void {
     this.cls.set('traceId', traceId);
   }
+
+  // Phase 2C — the caller's currently selected Organization (may be
+  // undefined/null — tenant-wide). See AppClsStore's own comment.
+  get organizationId(): string | null | undefined {
+    return this.cls.get('organizationId');
+  }
+
+  setOrganizationId(organizationId: string | null | undefined): void {
+    this.cls.set('organizationId', organizationId);
+  }
+
+  // Phase 2B.1 — Platform Operator context. Populated exclusively by
+  // PlatformJwtAuthGuard; never co-populated with tenantId/userId on the
+  // same request (see AppClsStore's own comment).
+  get operatorId(): string | undefined {
+    return this.cls.get('operatorId');
+  }
+
+  get isPlatformOperator(): boolean {
+    return this.cls.get('isPlatformOperator') === true;
+  }
+
+  requireOperatorId(): string {
+    const operatorId = this.operatorId;
+    if (!operatorId) {
+      throw new BadRequestException('No Platform Operator context on this request');
+    }
+    return operatorId;
+  }
+
+  setOperatorId(operatorId: string | undefined): void {
+    this.cls.set('operatorId', operatorId);
+  }
+
+  setIsPlatformOperator(value: boolean): void {
+    this.cls.set('isPlatformOperator', value);
+  }
 }

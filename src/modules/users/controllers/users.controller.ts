@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPi
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { RequirePermissions, ResponseMessage, SkipTenantStatusCheck } from '../../../common';
 import { CreateUserDto } from '../dto/create-user.dto';
+import { ResendInvitationDto } from '../dto/resend-invitation.dto';
 import { UpdateUserDto } from '../dto/update-user.dto';
 import { UserQueryDto } from '../dto/user-query.dto';
 import { UsersService } from '../services/users.service';
@@ -72,11 +73,11 @@ export class UsersController {
   @ApiOperation({
     summary: 'Resend an account-setup invitation email',
     description:
-      'Only valid for a PROVISIONED user who has not yet set a password. Invalidates any earlier unused invitation link.',
+      'Only valid for a still-pending (INVITED) membership. Invalidates any earlier unused invitation link for that organization.',
   })
   @ResponseMessage('Invitation resent')
-  async resendInvitation(@Param('id', ParseUUIDPipe) id: string) {
-    await this.usersService.resendInvitation(id);
+  async resendInvitation(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ResendInvitationDto) {
+    await this.usersService.resendInvitation(id, dto.organizationId);
     return null;
   }
 

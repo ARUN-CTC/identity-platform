@@ -33,6 +33,23 @@ export class OrganizationsRepository {
     );
   }
 
+  /**
+   * PHASE 2C (docs/ORGANIZATION_CONTEXT_ARCHITECTURE.md) — explicit-tenant
+   * lookup for context-switch validation. Unlike findById(), this never
+   * reads tenantId from ambient RequestContextService: at the point
+   * context-switch calls this, the target tenantId was just discovered via
+   * MembershipsRepository.findByUserAndOrgAnyTenant() (cross-tenant
+   * discovery, before any tenant RLS context is established) and must be
+   * threaded through explicitly — same actingAsTenantId pattern
+   * PlatformOperator cross-tenant administration already uses (Phase 2B.1).
+   */
+  async findByIdForTenant(tenantId: string, id: string): Promise<Organization | null> {
+    return this.prismaContext.runInContext(
+      (tx) => tx.organization.findFirst({ where: { id, tenantId, deletedAt: null } }),
+      tenantId,
+    );
+  }
+
   async create(dto: CreateOrganizationDto): Promise<Organization> {
     const tenantId = this.context.requireTenantId();
     return this.prismaContext.runInContext(

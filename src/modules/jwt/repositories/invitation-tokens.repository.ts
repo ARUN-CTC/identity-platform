@@ -10,6 +10,7 @@ export class InvitationTokensRepository {
   create(data: {
     tenantId: string;
     userId: string;
+    organizationId: string;
     tokenHash: string;
     expiresAt: Date;
   }): Promise<SecurityUserInvitationToken> {
@@ -51,23 +52,30 @@ export class InvitationTokensRepository {
     return result.count === 1;
   }
 
-  /** Invalidates any earlier, still-unused invitation tokens for this user when a new one is issued — only the latest link should ever work. */
-  async invalidateAllForUser(tenantId: string, userId: string): Promise<void> {
+  /**
+   * Invalidates any earlier, still-unused invitation tokens for this user
+   * *in this organization* when a new one is issued — only the latest link
+   * for a given organization should ever work. Scoped to organizationId
+   * (not just tenantId) because Phase 2A allows one global Identity to have
+   * more than one pending invitation, into different organizations, at once
+   * (docs/PHASE_2A.md).
+   */
+  async invalidateAllForUser(tenantId: string, userId: string, organizationId: string): Promise<void> {
     await this.prismaContext.runInContext(
       (tx) =>
         tx.securityUserInvitationToken.updateMany({
-          where: { tenantId, userId, usedAt: null },
+          where: { tenantId, userId, organizationId, usedAt: null },
           data: { usedAt: new Date() },
         }),
       tenantId,
     );
   }
 
-  findLatestForUser(tenantId: string, userId: string): Promise<SecurityUserInvitationToken | null> {
+  findLatestForUser(tenantId: string, userId: string, organizationId: string): Promise<SecurityUserInvitationToken | null> {
     return this.prismaContext.runInContext(
       (tx) =>
         tx.securityUserInvitationToken.findFirst({
-          where: { tenantId, userId },
+          where: { tenantId, userId, organizationId },
           orderBy: { createdAt: 'desc' },
         }),
       tenantId,
