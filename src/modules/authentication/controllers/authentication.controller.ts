@@ -1,7 +1,16 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
-import { Public, RequestContextService, ResponseMessage, SkipTenantStatusCheck } from '../../../common';
+import {
+  AUTH_LOGIN_POLICY_NAME,
+  PASSWORD_RESET_POLICY_NAME,
+  Public,
+  RateLimited,
+  RateLimitGuard,
+  RequestContextService,
+  ResponseMessage,
+  SkipTenantStatusCheck,
+} from '../../../common';
 import { ChangePasswordDto } from '../dto/change-password.dto';
 import { ForgotPasswordDto } from '../dto/forgot-password.dto';
 import { LoginDto } from '../dto/login.dto';
@@ -27,6 +36,8 @@ export class AuthenticationController {
   ) {}
 
   @Public()
+  @UseGuards(RateLimitGuard)
+  @RateLimited(AUTH_LOGIN_POLICY_NAME)
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Authenticate with tenantCode + email + password' })
@@ -113,6 +124,8 @@ export class AuthenticationController {
   }
 
   @Public()
+  @UseGuards(RateLimitGuard)
+  @RateLimited(PASSWORD_RESET_POLICY_NAME)
   @Post('password/forgot')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -126,6 +139,8 @@ export class AuthenticationController {
   }
 
   @Public()
+  @UseGuards(RateLimitGuard)
+  @RateLimited(PASSWORD_RESET_POLICY_NAME)
   @Post('password/reset')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Complete a password reset using the token from the reset email' })

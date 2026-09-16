@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { RateLimitModule } from '../../common';
 import { JwtModule } from '../jwt/jwt.module';
 import { SecurityAuditModule } from '../security-audit/security-audit.module';
 import { UsersModule } from '../users/users.module';
@@ -16,7 +17,7 @@ import { PlatformAuditService, PlatformAuthenticationService, PlatformOperatorsS
  * on any of those.
  */
 @Module({
-  imports: [JwtModule, SecurityAuditModule, UsersModule],
+  imports: [JwtModule, SecurityAuditModule, UsersModule, RateLimitModule],
   controllers: [PlatformAuthController, PlatformOperatorsController, PlatformAuditController],
   providers: [
     PlatformOperatorsRepository,

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { RateLimitModule } from '../../common';
 import { JwtModule } from '../jwt/jwt.module';
 import { MembershipsModule } from '../memberships/memberships.module';
 import { OrganizationsModule } from '../organizations/organizations.module';
@@ -19,7 +20,7 @@ import { UserRolesService, UsersService } from './services';
   // OrganizationsModule: Phase 2A — user creation/invitation now always
   // targets one Organization, and role grants/resolution now check
   // Membership (docs/PHASE_2A.md).
-  imports: [SecurityAuditModule, SessionsModule, JwtModule, MembershipsModule, OrganizationsModule],
+  imports: [SecurityAuditModule, SessionsModule, JwtModule, MembershipsModule, OrganizationsModule, RateLimitModule],
   controllers: [UsersController, UserRolesController, InvitationsController],
   providers: [UsersService, UsersRepository, UserRolesService, UserRolesRepository, UserInvitationsService],
   exports: [UsersService, UserRolesService, UserInvitationsService],

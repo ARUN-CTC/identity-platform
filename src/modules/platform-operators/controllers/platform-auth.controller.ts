@@ -1,7 +1,7 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
-import { Public, RequestContextService, ResponseMessage } from '../../../common';
+import { PLATFORM_AUTH_LOGIN_POLICY_NAME, Public, RateLimited, RateLimitGuard, RequestContextService, ResponseMessage } from '../../../common';
 import { PlatformLoginDto } from '../dto/platform-login.dto';
 import { PlatformRefreshTokenDto } from '../dto/platform-refresh-token.dto';
 import { PlatformJwtAuthGuard } from '../guards';
@@ -25,6 +25,8 @@ export class PlatformAuthController {
     private readonly context: RequestContextService,
   ) {}
 
+  @UseGuards(RateLimitGuard)
+  @RateLimited(PLATFORM_AUTH_LOGIN_POLICY_NAME)
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Authenticate a Platform Operator with email + password (no tenantCode)' })

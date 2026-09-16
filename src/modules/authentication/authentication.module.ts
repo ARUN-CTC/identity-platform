@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
+import { RateLimitModule } from '../../common';
 import { JwtModule } from '../jwt/jwt.module';
 import { MembershipsModule } from '../memberships/memberships.module';
 import { OrganizationsModule } from '../organizations/organizations.module';
@@ -21,7 +22,7 @@ import { AuthenticationService } from './services';
  * already set).
  */
 @Module({
-  imports: [TenantsModule, UsersModule, SessionsModule, JwtModule, SecurityAuditModule, MembershipsModule, OrganizationsModule],
+  imports: [TenantsModule, UsersModule, SessionsModule, JwtModule, SecurityAuditModule, MembershipsModule, OrganizationsModule, RateLimitModule],
   controllers: [AuthenticationController, MeController],
   providers: [
     AuthenticationService,

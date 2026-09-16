@@ -1,6 +1,6 @@
-import { Body, Controller, HttpCode, HttpStatus, Post, Query } from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpStatus, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Public, ResponseMessage } from '../../../../common';
+import { INVITATION_POLICY_NAME, Public, RateLimited, RateLimitGuard, ResponseMessage } from '../../../../common';
 import { UserInvitationsService } from '../services/user-invitations.service';
 import { AcceptInvitationDto } from '../dto/accept-invitation.dto';
 import { ValidateInvitationDto } from '../dto/validate-invitation.dto';
@@ -12,6 +12,8 @@ export class InvitationsController {
 
   @Post('validate')
   @Public()
+  @UseGuards(RateLimitGuard)
+  @RateLimited(INVITATION_POLICY_NAME)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Check an invitation link before rendering the accept-invitation form' })
   validate(@Query() query: ValidateInvitationDto) {
@@ -20,6 +22,8 @@ export class InvitationsController {
 
   @Post('accept')
   @Public()
+  @UseGuards(RateLimitGuard)
+  @RateLimited(INVITATION_POLICY_NAME)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Accept an invitation: set a password and activate the account' })
   @ResponseMessage('Account activated successfully')
