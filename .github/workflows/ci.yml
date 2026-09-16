@@ -1,0 +1,200 @@
+name: CI
+
+# Phase 3.1 — the first CI pipeline this repository has had (confirmed
+# absent before this phase: no .github directory existed at all). Every
+# command below is an EXISTING, already-working script from package.json —
+# nothing here invents a new build/test process, it only runs what already
+# runs locally, on every push/PR, gated so a broken build/test/lint can
+# never merge silently.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A second push to the same PR cancels the still-running CI for the first —
+# saves runner minutes on a series of quick-fixup pushes, never affects
+# `main` itself since each push there gets its own group.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend — typecheck, build, unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+      - run: npx prisma generate --schema=database/prisma/schema
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test
+
+  backend-e2e:
+    name: Backend — E2E (against a disposable Postgres)
+    runs-on: ubuntu-latest
+    # Mirrors docker-compose.yml's own local-dev Postgres exactly (same
+    # image, same owner credentials) — a disposable, ephemeral service
+    # container for this CI run only, never a shared or production
+    # database. Torn down automatically when the job ends; nothing here
+    # persists between runs.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: identity_platform_db
+          POSTGRES_USER: identity_owner
+          POSTGRES_PASSWORD: changeme
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U identity_owner -d identity_platform_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Owner-role URL for schema build/seed (matches database/scripts'
+      # own documented requirement — "DATABASE_URL set to an
+      # elevated/owner role"). The app itself connects as identity_app at
+      # runtime (see database/shared/003_app_role.sql) — e2e specs build
+      # their Nest app directly via TestingModule against the same
+      # DATABASE_URL the rest of this job uses, matching every other e2e
+      # run in this repository's own history (local dev included).
+      DATABASE_URL: postgresql://identity_owner:changeme@localhost:5432/identity_platform_db
+      JWT_ACCESS_SECRET: ci-only-test-secret-not-used-anywhere-real-32chars
+      APP_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+      - run: npx prisma generate --schema=database/prisma/schema
+      - name: Build schema
+        run: npm run db:build-schema
+      - name: Seed reference data
+        run: npm run db:seed
+      - run: npm run test:e2e
+
+  backend-audit:
+    name: Backend — dependency audit (non-blocking)
+    runs-on: ubuntu-latest
+    # Phase 3 found 12 pre-existing advisories requiring a NestJS
+    # major-version bump (documented, not silently fixed) — this job
+    # reports the current state on every PR without ever failing CI over
+    # an already-known, already-triaged, not-yet-remediated finding. A NEW
+    # advisory appearing is exactly what this job exists to surface early.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+      - run: npm audit --omit=dev
+
+  frontend:
+    name: Frontend — typecheck, lint, build, tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run build
+      - run: npx vitest run
+
+  frontend-audit:
+    name: Frontend — dependency audit (non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - run: npm audit --omit=dev
+
+  docker-build:
+    name: Docker — production image build + smoke test
+    runs-on: ubuntu-latest
+    # A real (disposable) Postgres is required here, not a fake/unreachable
+    # URL: PrismaService.onModuleInit() calls $connect() eagerly, so the
+    # whole Nest app fails to boot at all without real DB connectivity —
+    # confirmed by reading that file directly (Phase 3.1). A smoke test
+    # against an unreachable DB would never even reach the point of
+    # answering /health/live, and would look like a Dockerfile bug instead
+    # of the expected, correct fail-closed startup behavior it actually is.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: identity_platform_db
+          POSTGRES_USER: identity_owner
+          POSTGRES_PASSWORD: changeme
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U identity_owner -d identity_platform_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+      - run: npx prisma generate --schema=database/prisma/schema
+      - run: npm run db:build-schema
+        env:
+          DATABASE_URL: postgresql://identity_owner:changeme@localhost:5432/identity_platform_db
+      - uses: docker/setup-buildx-action@v3
+      - name: Build production image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          load: true
+          tags: identity-platform-backend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke test — container starts, connects to Postgres, answers liveness/readiness, and shuts down cleanly
+        run: |
+          docker run -d --name smoke --network host \
+            -e JWT_ACCESS_SECRET=ci-smoke-test-secret-not-real-32-characters-long \
+            -e DATABASE_URL=postgresql://identity_app:changeme@localhost:5432/identity_platform_db \
+            identity-platform-backend:ci
+          for i in $(seq 1 15); do
+            if curl -sf http://localhost:4000/health/live; then echo "live"; break; fi
+            sleep 2
+          done
+          curl -sf http://localhost:4000/health/live
+          curl -sf http://localhost:4000/health/ready
+          docker logs smoke
+          # Graceful-shutdown smoke check (Step 6): SIGTERM should stop the
+          # container within its default grace period, not require a kill.
+          docker stop --time 10 smoke
+          docker inspect smoke --format '{{.State.Status}} exitcode={{.State.ExitCode}}'

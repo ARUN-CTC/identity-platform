@@ -5,13 +5,21 @@ import './common/bigint-json.polyfill';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import helmet from 'helmet';
 import { ClsMiddleware } from 'nestjs-cls';
 import { AppModule } from './app.module';
 import { parseCorsAllowedOrigins } from './config/cors.config';
+import { securityHeadersOptions } from './config/security-headers.config';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.enableShutdownHooks();
+
+  // Phase 3.1 (production hardening) — see security-headers.config.ts for
+  // the full rationale (why CSP is off, why every other helmet default is
+  // safe here) and for how this same configuration is exercised by a real
+  // e2e test.
+  app.use(helmet(securityHeadersOptions()));
 
   // Applied directly (not via ClsModule's auto-mount) so it's guaranteed to
   // run before Nest's router — same proven pattern this was extracted from.

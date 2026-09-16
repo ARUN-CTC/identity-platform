@@ -1,0 +1,25 @@
+# Never build context includes these — keeps the image small and never
+# leaks local secrets/history into a layer.
+.git
+.github
+.vscode
+node_modules
+dist
+coverage
+*.tsbuildinfo
+
+# Environment files — real config/secrets come from the container runtime
+# (docker run -e / compose env / orchestrator secrets), never baked into
+# the image. .env.example is documentation only and also excluded since
+# the image needs none of it.
+.env
+.env.*
+
+# The frontend is a separate app/deployable, not part of this backend image.
+apps/web
+
+# Local dev database data/volumes, docs, and anything not needed to build
+# or run the compiled backend.
+docs
+*.md
+!README.md

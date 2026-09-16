@@ -41,7 +41,18 @@ All three fixes are proven by direct concurrency tests (`Promise.allSettled` aga
 
 Zero errors across all 600 requests. `/health/ready`'s added ~9-10ms p50 latency over `/health/live` is consistent with one round-trip to a local database — not itself a bottleneck signal on this hardware.
 
-**Not measured this pass** (documented limitation, not overclaimed): `/oauth/authorize`, `/oauth/token`, `/oauth/userinfo`, and a full resource-authorization request under load — each requires a pre-provisioned Application/ServiceAccount/Tenant fixture and, for `/authorize`, a real authenticated session; building that fixture harness for a load-generator (rather than a correctness test) was judged lower priority than the dependency-failure and concurrency-race work above within this phase's own effort budget. A future load-test pass should extend this same script against those endpoints using the fixture-creation helpers already established in `tests/phase2d4-*`/`tests/phase2d6-*`.
+**Phase 3.1 — extended to the authenticated/business endpoints this phase's own brief prioritized** (same methodology, same script class, same dev machine/database; a real DEV-tenant session token, `identity_app` runtime role):
+
+| Endpoint | Concurrency | Requests | Throughput | p50 | p95 | p99 | max | Errors |
+|---|---|---|---|---|---|---|---|---|
+| `GET /auth/me` | 20 | 200 | 55 req/s | 331.8ms | 499.1ms | 524.1ms | 552.6ms | 0 |
+| `GET /users?limit=20` | 20 | 200 | 61 req/s | 300.6ms | 456.6ms | 472.4ms | 483.7ms | 0 |
+| `GET /organizations?limit=20` | 20 | 200 | 94 req/s | 185.1ms | 334.2ms | 362.6ms | 373.5ms | 0 |
+| `POST /auth/login` | 20 | 200 | 29 req/s | 660.4ms | 787.5ms | 859.3ms | 942.8ms | 0 |
+
+Zero errors across all 800 additional requests (1400 total across both passes). `/auth/login`'s latency is dominated by Argon2id verification — deliberately expensive by design (password hashing must resist offline brute force), not a query/index problem; this is expected and matches the shape every credential check in this class of system should have. `/auth/me`'s ~300ms p50 under 20-way concurrency on this modest dev machine (not Prisma's default connection-pool size tuned for load) is the closest thing to a soft signal in this pass — worth re-measuring once Prisma's `connection_limit`/`pool_timeout` are explicitly set (§K/L above; still undischarged) rather than left at their defaults, but no index/query-plan issue was identified by inspection.
+
+**Still not measured** (documented limitation, not overclaimed — unchanged from the prior pass): `/oauth/authorize`, `/oauth/token`, `/oauth/userinfo`, and a full resource-authorization request under load — each requires a pre-provisioned Application/ServiceAccount/Tenant fixture and, for `/authorize`, a real authenticated session; building that fixture harness for a load-generator (rather than a correctness test) remains lower priority than the security-hardening work covered elsewhere in Phase 3/3.1. A future load-test pass should extend the same script (`perf-baseline.js`-class, no new dependency) against those endpoints using the fixture-creation helpers already established in `tests/phase2d4-*`/`tests/phase2d6-*`.
 
 **No premature optimization performed** — these numbers are a baseline, not a target; nothing in this phase changed a hot path's implementation for speed.
 
@@ -67,8 +78,21 @@ Health/readiness:     GET /health/live (liveness), GET /health/ready (readiness)
 Shutdown:             app.enableShutdownHooks() + PrismaService.onModuleDestroy() — unchanged, clean disconnect on SIGTERM/SIGINT
 Backup:               database/scripts/backup-restore-validate.sh — run as identity_owner, never identity_app
 Monitoring:           No metrics/log/trace exporter wired — IdentityMetrics (Phase 2D.9) is the vendor-neutral seam; wiring a real backend is a deployment-time integration, not built here
-Containerization:     docker-compose.yml provisions ONLY the local-development PostgreSQL container — no application Dockerfile exists yet (a genuine, documented gap; building
-                       one is new deliverable work, judged out of this phase's validate-the-existing-system scope)
+Containerization:     Phase 3.1 — Dockerfile added (multi-stage, node:22-slim/glibc, non-root, HEALTHCHECK on /health/live). Built and smoke-tested live this
+                       phase: container starts, connects to the real Postgres, GET /health/live and /health/ready both 200, non-root confirmed
+                       (`docker exec ... whoami` -> identity), a real API request behaves correctly, and `docker stop` exits cleanly (code 0) in <1s.
+CI/CD:                Phase 3.1 — .github/workflows/ci.yml added (previously absent entirely). Backend typecheck/build/unit/e2e (disposable Postgres
+                       service), frontend typecheck/lint/build/test, dependency audits (non-blocking), and a Docker build+smoke-test job. Repository
+                       artifact only — not executed on a real GitHub Actions runner this session (no such access); reviewed line-by-line against every
+                       command it invokes, all of which are pre-existing, already-working local scripts.
+Security headers:     Phase 3.1 — helmet added (`src/config/security-headers.config.ts`), CSP deliberately off (Swagger UI at /api/docs uses inline
+                       assets that would break under helmet's default CSP; this API has no other HTML surface to protect with one). Every other helmet
+                       default (nosniff, frame-ancestors, no-referrer, HSTS, X-Powered-By removal) verified live via `tests/phase3-1-security-headers.e2e-spec.ts`
+                       and against the real Docker container's own response headers.
+Reverse proxy:        Phase 3.1 — `app.set('trust proxy', ...)` is NOT yet called anywhere in main.ts. Not exploitable today (no proxy sits in front of
+                       this app in development/CI), but a real production deployment behind any reverse proxy MUST set this or every rate-limit/lockout
+                       control (§1 above, and Phase 3's login/password-reset/invitation policies) keys on the proxy's own IP instead of the real client's.
+                       See docs/TLS_AND_REVERSE_PROXY_RUNBOOK.md.
 ```
 
 No cloud provider is assumed or hard-coded anywhere in this document or the codebase.
