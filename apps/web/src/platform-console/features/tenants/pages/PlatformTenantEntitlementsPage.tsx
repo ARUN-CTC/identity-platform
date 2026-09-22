@@ -1,12 +1,19 @@
 import AddIcon from "@mui/icons-material/Add";
+import ExpandLessIcon from "@mui/icons-material/ExpandLess";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import Alert from "@mui/material/Alert";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
+import Collapse from "@mui/material/Collapse";
+import IconButton from "@mui/material/IconButton";
 import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
+import ListItemButton from "@mui/material/ListItemButton";
 import ListItemText from "@mui/material/ListItemText";
 import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
@@ -40,6 +47,7 @@ export default function PlatformTenantEntitlementsPage() {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const [selectedProductId, setSelectedProductId] = useState("");
+  const [expandedProductId, setExpandedProductId] = useState<string | null>(null);
 
   const entitlementsQuery = useQuery({
     queryKey: ["platform", "tenants", id, "entitlements"],
@@ -105,7 +113,12 @@ export default function PlatformTenantEntitlementsPage() {
 
   return (
     <>
-      <PageHeader title="Product Entitlements" description="Which products this tenant may use." onBack={() => navigate(`/platform-console/tenants/${id}`)} />
+      <PageHeader title="Product Access" description="Which products this tenant may use — the tenant-level row of this platform's Access Matrix." onBack={() => navigate(`/platform-console/tenants/${id}`)} />
+
+      <Alert severity="info" sx={{ mb: 2 }}>
+        This shows tenant-level access only — the underlying fact this console can prove today. Per-user rows (which specific member can reach which product) would need a new backend endpoint joining
+        entitlement + membership + organization data; not built yet. Click a row below to see exactly what "access" is based on.
+      </Alert>
 
       <Stack direction="row" spacing={1.5} sx={{ mb: 2 }}>
         <Select size="small" displayEmpty value={selectedProductId} onChange={(e) => setSelectedProductId(e.target.value)} sx={{ minWidth: 240 }}>
@@ -130,45 +143,73 @@ export default function PlatformTenantEntitlementsPage() {
           <List disablePadding>
             {entitlementsQuery.data.map((entitlement) => {
               const meta = statusMeta(entitlement.status);
+              const isExpanded = expandedProductId === entitlement.productId;
               return (
-                <ListItem
-                  key={entitlement.productId}
-                  divider
-                  secondaryAction={
-                    <Stack direction="row" spacing={1}>
-                      {entitlement.status === "ACTIVE" && (
-                        <Button size="small" color="warning" onClick={() => handleTransition(entitlement.productId, "SUSPENDED")}>
-                          Suspend
-                        </Button>
-                      )}
-                      {entitlement.status === "SUSPENDED" && (
-                        <Button size="small" color="success" onClick={() => handleTransition(entitlement.productId, "ACTIVE")}>
-                          Activate
-                        </Button>
-                      )}
-                      {entitlement.status !== "REVOKED" && (
-                        <Button size="small" color="error" onClick={() => handleTransition(entitlement.productId, "REVOKED")}>
-                          Revoke
-                        </Button>
-                      )}
-                      {entitlement.status === "REVOKED" && (
-                        <Button size="small" color="success" onClick={() => handleReactivate(entitlement.productId)}>
-                          Reactivate
-                        </Button>
-                      )}
-                    </Stack>
-                  }
-                >
-                  <ListItemText
-                    primary={
-                      <Stack direction="row" spacing={1} alignItems="center">
-                        {entitlement.product?.name ?? entitlement.productId}
-                        <StatusBadge status={meta.statusKey} label={meta.label} />
+                <Stack key={entitlement.productId}>
+                  <ListItem
+                    divider={!isExpanded}
+                    disablePadding
+                    secondaryAction={
+                      <Stack direction="row" spacing={1}>
+                        {entitlement.status === "ACTIVE" && (
+                          <Button size="small" color="warning" onClick={() => handleTransition(entitlement.productId, "SUSPENDED")}>
+                            Suspend
+                          </Button>
+                        )}
+                        {entitlement.status === "SUSPENDED" && (
+                          <Button size="small" color="success" onClick={() => handleTransition(entitlement.productId, "ACTIVE")}>
+                            Activate
+                          </Button>
+                        )}
+                        {entitlement.status !== "REVOKED" && (
+                          <Button size="small" color="error" onClick={() => handleTransition(entitlement.productId, "REVOKED")}>
+                            Revoke
+                          </Button>
+                        )}
+                        {entitlement.status === "REVOKED" && (
+                          <Button size="small" color="success" onClick={() => handleReactivate(entitlement.productId)}>
+                            Reactivate
+                          </Button>
+                        )}
+                        <IconButton
+                          size="small"
+                          onClick={() => setExpandedProductId(isExpanded ? null : entitlement.productId)}
+                          aria-label={isExpanded ? `Hide basis for ${entitlement.product?.name ?? entitlement.productId}` : `Show basis for ${entitlement.product?.name ?? entitlement.productId}`}
+                        >
+                          {isExpanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+                        </IconButton>
                       </Stack>
                     }
-                    secondary={entitlement.product?.slug}
-                  />
-                </ListItem>
+                  >
+                    <ListItemButton onClick={() => setExpandedProductId(isExpanded ? null : entitlement.productId)} sx={{ pr: 20 }}>
+                      <ListItemText
+                        primary={
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            {entitlement.product?.name ?? entitlement.productId}
+                            <StatusBadge status={meta.statusKey} label={meta.label} />
+                          </Stack>
+                        }
+                        secondary={entitlement.product?.slug}
+                      />
+                    </ListItemButton>
+                  </ListItem>
+                  <Collapse in={isExpanded} unmountOnExit>
+                    <Stack spacing={0.5} sx={{ px: 2, py: 1.5, bgcolor: "action.hover", borderBottom: 1, borderColor: "divider" }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, textTransform: "uppercase" }}>
+                        Basis for this access
+                      </Typography>
+                      <Typography variant="body2">
+                        Tenant Product Entitlement: <strong>{entitlement.status}</strong>
+                      </Typography>
+                      <Typography variant="body2">Granted: {new Date(entitlement.createdAt).toLocaleString()}</Typography>
+                      {entitlement.updatedAt && <Typography variant="body2">Last changed: {new Date(entitlement.updatedAt).toLocaleString()}</Typography>}
+                      <Typography variant="caption" color="text.disabled">
+                        This is the complete, real basis this platform can show today — which specific members can reach this product (their own Membership/Organization) isn't joined here yet;
+                        this entitlement is the tenant-wide gate every member's access still depends on.
+                      </Typography>
+                    </Stack>
+                  </Collapse>
+                </Stack>
               );
             })}
           </List>

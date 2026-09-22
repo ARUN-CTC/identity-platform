@@ -2,6 +2,9 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import PauseCircleOutlinedIcon from "@mui/icons-material/PauseCircleOutlined";
 import PlayCircleOutlinedIcon from "@mui/icons-material/PlayCircleOutlined";
+import RocketLaunchOutlinedIcon from "@mui/icons-material/RocketLaunchOutlined";
+import Alert from "@mui/material/Alert";
+import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
 import Grid from "@mui/material/Grid";
@@ -22,6 +25,7 @@ import { useConfirm } from "@/design-system/patterns/confirmation";
 import { getApiErrorMessage } from "@/shared/api";
 
 import { PlatformTenantEditDrawer } from "../PlatformTenantEditDrawer";
+import { TenantBootstrapWizard } from "../TenantBootstrapWizard";
 import { useActivatePlatformTenantMutation, useDeletePlatformTenantMutation, usePlatformTenantQuery, useSuspendPlatformTenantMutation } from "../hooks";
 import { getTenantStatusMeta } from "../statusMeta";
 
@@ -42,6 +46,7 @@ export default function PlatformTenantDetailPage() {
   const notify = useNotify();
   const confirm = useConfirm();
   const [editOpen, setEditOpen] = useState(false);
+  const [bootstrapOpen, setBootstrapOpen] = useState(false);
 
   const tenantQuery = usePlatformTenantQuery(id);
   const activateMutation = useActivatePlatformTenantMutation(id ?? "");
@@ -137,6 +142,20 @@ export default function PlatformTenantDetailPage() {
         }
       />
 
+      {tenant.status === "PROVISIONING" && (
+        <Alert
+          severity="info"
+          sx={{ mb: 3 }}
+          action={
+            <Button color="inherit" size="small" variant="outlined" startIcon={<RocketLaunchOutlinedIcon />} onClick={() => setBootstrapOpen(true)}>
+              Bootstrap tenant
+            </Button>
+          }
+        >
+          This tenant has no Organization or Administrator yet — nobody can use it until it's bootstrapped.
+        </Alert>
+      )}
+
       <Card>
         <CardContent>
           <Grid container spacing={2}>
@@ -160,6 +179,7 @@ export default function PlatformTenantDetailPage() {
       </Stack>
 
       <PlatformTenantEditDrawer open={editOpen} onClose={() => setEditOpen(false)} tenant={tenant} />
+      <TenantBootstrapWizard open={bootstrapOpen} onClose={() => setBootstrapOpen(false)} tenant={tenant} />
     </>
   );
 }

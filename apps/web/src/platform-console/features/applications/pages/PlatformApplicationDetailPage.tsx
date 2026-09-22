@@ -1,4 +1,5 @@
 import AddIcon from "@mui/icons-material/Add";
+import AutorenewOutlinedIcon from "@mui/icons-material/AutorenewOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
@@ -27,14 +28,22 @@ import { EmptyState } from "@/design-system/components/EmptyState";
 import { ErrorState } from "@/design-system/components/ErrorState";
 import { LoadingState } from "@/design-system/components/LoadingState";
 import { PageHeader } from "@/design-system/components/PageHeader";
+import { useConfirm } from "@/design-system/patterns/confirmation";
 import { getApiErrorMessage } from "@/shared/api";
-import type { ApplicationStatus, CreatedServiceAccount } from "@/shared/platform-api";
+import type { ApplicationStatus, CreatedApplication, CreatedServiceAccount } from "@/shared/platform-api";
 
 import { OneTimeSecretDialog } from "../../../components/OneTimeSecretDialog";
 import { usePlatformProductQuery } from "../../products/hooks";
-import { useCreateServiceAccountMutation, useServiceAccountsForApplicationQuery, useUpdateServiceAccountMutation } from "../../service-accounts/hooks";
+import {
+  useCreateServiceAccountMutation,
+  useRotateServiceAccountCredentialMutation,
+  useServiceAccountsForApplicationQuery,
+  useUpdateServiceAccountMutation,
+} from "../../service-accounts/hooks";
 import { ApplicationConfigDrawer } from "../ApplicationConfigDrawer";
-import { usePlatformApplicationQuery, useUpdateApplicationMutation } from "../hooks";
+import { usePlatformApplicationQuery, useRotateApplicationSecretMutation, useUpdateApplicationMutation } from "../hooks";
+
+const ROTATE_WARNING = "Rotating this credential will immediately invalidate the existing one — there is no overlap window. Any product still using the old value will start failing authentication the instant this completes.";
 
 function Field({ label, value }: { label: string; value: string }) {
   return (
@@ -53,17 +62,22 @@ export default function PlatformApplicationDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const notify = useNotify();
+  const confirm = useConfirm();
   const [createSaOpen, setCreateSaOpen] = useState(false);
   const [saName, setSaName] = useState("");
   const [revealedCredential, setRevealedCredential] = useState<CreatedServiceAccount | null>(null);
+  const [revealedRotatedCredential, setRevealedRotatedCredential] = useState<CreatedServiceAccount | null>(null);
+  const [revealedAppSecret, setRevealedAppSecret] = useState<CreatedApplication | null>(null);
   const [configDrawerOpen, setConfigDrawerOpen] = useState(false);
 
   const applicationQuery = usePlatformApplicationQuery(id);
   const updateAppMutation = useUpdateApplicationMutation(id ?? "", applicationQuery.data?.productId ?? "");
+  const rotateAppSecretMutation = useRotateApplicationSecretMutation(id ?? "");
   const productQuery = usePlatformProductQuery(applicationQuery.data?.productId);
   const serviceAccountsQuery = useServiceAccountsForApplicationQuery(id);
   const createSaMutation = useCreateServiceAccountMutation(id ?? "");
   const updateSaMutation = useUpdateServiceAccountMutation(id ?? "");
+  const rotateSaCredentialMutation = useRotateServiceAccountCredentialMutation(id ?? "");
 
   if (applicationQuery.isLoading) return <LoadingState label="Loading application…" />;
   if (applicationQuery.isError) {
@@ -101,6 +115,41 @@ export default function PlatformApplicationDetailPage() {
     }
   };
 
+  const handleRotateAppSecret = async () => {
+    const confirmed = await confirm({
+      title: `Rotate ${application.name}'s client secret?`,
+      description: ROTATE_WARNING,
+      confirmLabel: "Rotate secret",
+      destructive: true,
+    });
+    if (!confirmed) return;
+    try {
+      const rotated = await rotateAppSecretMutation.mutateAsync();
+      setRevealedAppSecret(rotated);
+    } catch (error) {
+      // A 409 here is most often CONCURRENT_MODIFICATION (another operator
+      // rotated this same secret moments ago) — surfaced verbatim rather
+      // than a generic message, since it names exactly what to do next.
+      notify({ message: getApiErrorMessage(error), severity: "error" });
+    }
+  };
+
+  const handleRotateServiceAccountCredential = async (targetName: string, saId: string) => {
+    const confirmed = await confirm({
+      title: `Rotate ${targetName}'s credential?`,
+      description: ROTATE_WARNING,
+      confirmLabel: "Rotate credential",
+      destructive: true,
+    });
+    if (!confirmed) return;
+    try {
+      const rotated = await rotateSaCredentialMutation.mutateAsync(saId);
+      setRevealedRotatedCredential(rotated);
+    } catch (error) {
+      notify({ message: getApiErrorMessage(error), severity: "error" });
+    }
+  };
+
   return (
     <>
       <PageHeader title={application.name} description={application.clientId} onBack={() => navigate(`/platform-console/products/${application.productId}`)} />
@@ -128,17 +177,37 @@ export default function PlatformApplicationDetailPage() {
               Edit configuration
             </Button>
           </Stack>
-          <FormControl size="small" sx={{ mt: 2, minWidth: 200 }}>
-            <InputLabel id="app-status-label">Status</InputLabel>
-            <Select labelId="app-status-label" label="Status" value={application.status} onChange={(e) => handleStatusChange(e.target.value as ApplicationStatus)}>
-              <MenuItem value="ACTIVE">Active</MenuItem>
-              <MenuItem value="SUSPENDED">Suspended</MenuItem>
-              <MenuItem value="DISABLED">Disabled</MenuItem>
-            </Select>
-          </FormControl>
-          <Typography variant="caption" color="text.disabled" sx={{ display: "block", mt: 2 }}>
-            No secret rotation or revocation exists for this application — the backend has no such endpoint. The client secret was shown once, at creation.
-          </Typography>
+          <Stack direction="row" spacing={2} alignItems="flex-start" sx={{ mt: 2 }}>
+            <FormControl size="small" sx={{ minWidth: 200 }}>
+              <InputLabel id="app-status-label">Status</InputLabel>
+              <Select labelId="app-status-label" label="Status" value={application.status} onChange={(e) => handleStatusChange(e.target.value as ApplicationStatus)}>
+                <MenuItem value="ACTIVE">Active</MenuItem>
+                <MenuItem value="SUSPENDED">Suspended</MenuItem>
+                <MenuItem value="DISABLED">Disabled</MenuItem>
+              </Select>
+            </FormControl>
+            {application.clientType === "CONFIDENTIAL" ? (
+              <Button
+                variant="outlined"
+                color="warning"
+                size="small"
+                startIcon={<AutorenewOutlinedIcon />}
+                onClick={handleRotateAppSecret}
+                disabled={application.status !== "ACTIVE" || rotateAppSecretMutation.isPending}
+              >
+                Rotate client secret
+              </Button>
+            ) : (
+              <Typography variant="caption" color="text.disabled" sx={{ alignSelf: "center" }}>
+                PUBLIC applications have no client secret to rotate — PKCE is this client&apos;s only proof of possession.
+              </Typography>
+            )}
+          </Stack>
+          {application.clientType === "CONFIDENTIAL" && application.status !== "ACTIVE" && (
+            <Typography variant="caption" color="text.disabled" sx={{ display: "block", mt: 1 }}>
+              Rotation requires an ACTIVE application — reactivate it first.
+            </Typography>
+          )}
         </CardContent>
       </Card>
 
@@ -169,9 +238,20 @@ export default function PlatformApplicationDetailPage() {
                 key={sa.id}
                 divider
                 secondaryAction={
-                  <Button size="small" onClick={() => handleToggleServiceAccountStatus(sa.id, sa.status)}>
-                    {sa.status === "ACTIVE" ? "Suspend" : "Activate"}
-                  </Button>
+                  <Stack direction="row" spacing={1}>
+                    <Button
+                      size="small"
+                      color="warning"
+                      startIcon={<AutorenewOutlinedIcon fontSize="small" />}
+                      onClick={() => handleRotateServiceAccountCredential(sa.name, sa.id)}
+                      disabled={sa.status !== "ACTIVE" || rotateSaCredentialMutation.isPending}
+                    >
+                      Rotate credential
+                    </Button>
+                    <Button size="small" onClick={() => handleToggleServiceAccountStatus(sa.id, sa.status)}>
+                      {sa.status === "ACTIVE" ? "Suspend" : "Activate"}
+                    </Button>
+                  </Stack>
                 }
               >
                 <ListItemText primary={<Stack direction="row" spacing={1} alignItems="center">{sa.name}<Chip label={sa.status} size="small" /></Stack>} secondary={sa.id} />
@@ -203,6 +283,28 @@ export default function PlatformApplicationDetailPage() {
 
       {revealedCredential && (
         <OneTimeSecretDialog open onClose={() => setRevealedCredential(null)} label="Service account credential" identity={revealedCredential.name} secret={revealedCredential.credential} />
+      )}
+
+      {revealedRotatedCredential && (
+        <OneTimeSecretDialog
+          open
+          onClose={() => setRevealedRotatedCredential(null)}
+          label="Service account credential"
+          identity={revealedRotatedCredential.name}
+          secret={revealedRotatedCredential.credential}
+          title={`${revealedRotatedCredential.name}'s credential was rotated`}
+        />
+      )}
+
+      {revealedAppSecret && (
+        <OneTimeSecretDialog
+          open
+          onClose={() => setRevealedAppSecret(null)}
+          label="Client secret"
+          identity={revealedAppSecret.name}
+          secret={revealedAppSecret.clientSecret ?? ""}
+          title={`${revealedAppSecret.name}'s client secret was rotated`}
+        />
       )}
 
       {productQuery.data && (

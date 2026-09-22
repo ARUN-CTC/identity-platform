@@ -131,7 +131,12 @@ export function ApplicationConfigDrawer({ open, onClose, application, productSlu
           fullWidth
           helperText={`Comma-separated. Standard OIDC scopes (openid, profile, email) or namespaced under this product's own slug ('${productSlug}.').`}
         />
-        <TextField {...register("audiences")} label="Audiences" fullWidth helperText="Comma-separated resource-API identifiers this app may request a token for. No wildcards." />
+        <TextField
+          {...register("audiences")}
+          label="Audiences"
+          fullWidth
+          helperText="Comma-separated resource-API identifiers this app may request a token for. No wildcards. An audience is NOT the client ID, a scope, or a permission — without at least one, every login attempt for this application fails at /oauth/authorize."
+        />
       </Stack>
     </FormDrawer>
   );

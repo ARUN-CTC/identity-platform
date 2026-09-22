@@ -4,6 +4,7 @@ import {
   createApplication,
   getPlatformApplication,
   listApplicationsForProduct,
+  rotateApplicationSecret,
   updatePlatformApplication,
   type CreateApplicationInput,
   type UpdateApplicationInput,
@@ -42,5 +43,14 @@ export function useUpdateApplicationMutation(id: string, productId: string) {
       queryClient.invalidateQueries({ queryKey: keys.detail(id) });
       queryClient.invalidateQueries({ queryKey: keys.forProduct(productId) });
     },
+  });
+}
+
+/** Phase 2UI.2/2UI.3 — atomic replacement; see rotateApplicationSecret's own doc comment. */
+export function useRotateApplicationSecretMutation(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => rotateApplicationSecret(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.detail(id) }),
   });
 }

@@ -22,6 +22,8 @@ export interface OneTimeSecretDialogProps {
   /** e.g. the clientId or service account name, for context. */
   identity: string;
   secret: string;
+  /** Defaults to "{identity} created successfully" — pass an override for a non-creation flow (e.g. rotation). */
+  title?: string;
 }
 
 /**
@@ -38,7 +40,7 @@ export interface OneTimeSecretDialogProps {
  *   - closing this dialog is the only affordance — there is deliberately no
  *     "show again" action, because the backend has none to call
  */
-export function OneTimeSecretDialog({ open, onClose, label, identity, secret }: OneTimeSecretDialogProps) {
+export function OneTimeSecretDialog({ open, onClose, label, identity, secret, title }: OneTimeSecretDialogProps) {
   const notify = useNotify();
   const [revealed, setRevealed] = useState(false);
 
@@ -53,7 +55,7 @@ export function OneTimeSecretDialog({ open, onClose, label, identity, secret }: 
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>{identity} created successfully</DialogTitle>
+      <DialogTitle>{title ?? `${identity} created successfully`}</DialogTitle>
       <DialogContent>
         <Stack spacing={2}>
           <Alert severity="warning">This {label.toLowerCase()} will not be shown again. Copy it now and store it securely.</Alert>

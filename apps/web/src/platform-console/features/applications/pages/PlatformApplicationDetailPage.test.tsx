@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { NotificationProvider } from "@/app/providers/NotificationProvider";
+import { ConfirmProvider } from "@/design-system/patterns/confirmation";
 import { configurePlatformApiClient } from "@/shared/platform-api";
 import type { PlatformApplication, PlatformProduct } from "@/shared/platform-api";
 
@@ -54,12 +55,14 @@ function renderPage(fetchImpl: (url: string, init?: RequestInit) => Promise<Resp
   render(
     <QueryClientProvider client={client}>
       <NotificationProvider>
-        <MemoryRouter initialEntries={["/platform-console/applications/app-1"]}>
-          <Routes>
-            <Route path="/platform-console/applications/:id" element={<PlatformApplicationDetailPage />} />
-            <Route path="/platform-console/products/:id" element={<div>Product detail page</div>} />
-          </Routes>
-        </MemoryRouter>
+        <ConfirmProvider>
+          <MemoryRouter initialEntries={["/platform-console/applications/app-1"]}>
+            <Routes>
+              <Route path="/platform-console/applications/:id" element={<PlatformApplicationDetailPage />} />
+              <Route path="/platform-console/products/:id" element={<div>Product detail page</div>} />
+            </Routes>
+          </MemoryRouter>
+        </ConfirmProvider>
       </NotificationProvider>
     </QueryClientProvider>,
   );
@@ -68,7 +71,9 @@ function renderPage(fetchImpl: (url: string, init?: RequestInit) => Promise<Resp
 
 function withStandardRoutes(overrides: {
   onPatch?: (body: Record<string, unknown>) => Response | Promise<Response>;
+  onRotate?: () => Response | Promise<Response>;
   app?: PlatformApplication;
+  serviceAccounts?: { id: string; applicationId: string; name: string; status: string; credentialCreatedAt: string; credentialRevokedAt: string | null; createdAt: string; updatedAt: string | null }[];
 }) {
   return async (url: string, init?: RequestInit) => {
     const pathname = new URL(url).pathname;
@@ -78,13 +83,22 @@ function withStandardRoutes(overrides: {
     if (pathname === "/api/v1/products/product-1" && (init?.method ?? "GET") === "GET") {
       return jsonResponse(200, product());
     }
-    if (pathname === "/api/v1/applications/app-1/service-accounts" || pathname.endsWith("/service-accounts")) {
-      return jsonResponse(200, { items: [], meta: { page: 1, limit: 100, total: 0, totalPages: 1 } });
+    if (pathname === "/api/v1/applications/app-1/service-accounts" && (init?.method ?? "GET") === "GET") {
+      return jsonResponse(200, { items: overrides.serviceAccounts ?? [], meta: { page: 1, limit: 100, total: overrides.serviceAccounts?.length ?? 0, totalPages: 1 } });
     }
     if (pathname === "/api/v1/applications/app-1" && init?.method === "PATCH") {
       const body = JSON.parse(init.body as string);
       if (overrides.onPatch) return overrides.onPatch(body);
       return jsonResponse(200, application({ ...body }));
+    }
+    if (pathname === "/api/v1/applications/app-1/credentials/rotate" && init?.method === "POST") {
+      if (overrides.onRotate) return overrides.onRotate();
+      return jsonResponse(200, { ...application(), clientSecret: "rotated-secret-value-xyz" });
+    }
+    if (pathname.endsWith("/credentials/rotate") && init?.method === "POST") {
+      // A service account credential rotation — matched generically since
+      // the id varies per test.
+      return jsonResponse(200, { id: "sa-1", applicationId: "app-1", name: "worker", status: "ACTIVE", credentialCreatedAt: "2026-01-02T00:00:00.000Z", credentialRevokedAt: null, credential: "rotated-sa-credential-abc" });
     }
     throw new Error(`Unexpected fetch: ${url} ${init?.method ?? "GET"}`);
   };
@@ -239,5 +253,113 @@ describe("PlatformApplicationDetailPage — configuration editing", () => {
     await user.click(within(dialog).getByRole("button", { name: "Save" }));
 
     expect(await screen.findByText("Something went wrong on our end. Please try again.")).toBeInTheDocument();
+  });
+});
+
+// Phase 2UI.3 — the security-sensitive rotation flow the governing brief's
+// own §37 explicitly asks for coverage of: confirmation-before-action,
+// one-time reveal, and (critically) that the secret never touches browser
+// storage and is unrecoverable once the dialog closes.
+describe("PlatformApplicationDetailPage — credential rotation", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("requires confirmation before rotating — cancelling makes no request at all", async () => {
+    const user = userEvent.setup();
+    const fetchMock = renderPage(withStandardRoutes({}));
+
+    await screen.findByText("Web Client");
+    await user.click(screen.getByRole("button", { name: "Rotate client secret" }));
+
+    const confirmDialog = await screen.findByRole("dialog");
+    expect(within(confirmDialog).getByText(/immediately invalidate the existing one/i)).toBeInTheDocument();
+    await user.click(within(confirmDialog).getByRole("button", { name: "Cancel" }));
+
+    expect(fetchMock.mock.calls.some((c) => new URL(c[0] as string).pathname.endsWith("/credentials/rotate"))).toBe(false);
+  });
+
+  it("on confirm, rotates and shows the new secret exactly once — never persisted to any browser storage", async () => {
+    const user = userEvent.setup();
+    renderPage(withStandardRoutes({}));
+
+    await screen.findByText("Web Client");
+    await user.click(screen.getByRole("button", { name: "Rotate client secret" }));
+    const confirmDialog = await screen.findByRole("dialog");
+    await user.click(within(confirmDialog).getByRole("button", { name: "Rotate secret" }));
+
+    expect(await screen.findByText(/client secret was rotated/i)).toBeInTheDocument();
+    // Masked by default — the raw value is not sitting in the DOM as text content.
+    expect(screen.queryByText("rotated-secret-value-xyz")).not.toBeInTheDocument();
+
+    // The one real security guarantee: nothing about this ever reaches
+    // persistent browser storage, regardless of whether the dialog is
+    // still open.
+    expect(localStorage.length).toBe(0);
+    expect(Object.values(sessionStorage).join("")).not.toContain("rotated-secret-value-xyz");
+  });
+
+  it("closing the reveal dialog makes the secret unrecoverable through this UI — no re-open, no re-fetch", async () => {
+    const user = userEvent.setup();
+    renderPage(withStandardRoutes({}));
+
+    await screen.findByText("Web Client");
+    await user.click(screen.getByRole("button", { name: "Rotate client secret" }));
+    const confirmDialog = await screen.findByRole("dialog");
+    await user.click(within(confirmDialog).getByRole("button", { name: "Rotate secret" }));
+
+    const revealDialog = await screen.findByRole("dialog");
+    await user.click(within(revealDialog).getByRole("button", { name: "Done — I've saved it" }));
+
+    expect(screen.queryByText(/client secret was rotated/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("rotated-secret-value-xyz")).not.toBeInTheDocument();
+    // The reveal affordance itself is gone with the dialog — nothing left on
+    // the page offers to show it again.
+    expect(screen.queryByRole("button", { name: /reveal|show client secret/i })).not.toBeInTheDocument();
+  });
+
+  it("disables rotation for a PUBLIC application — there is no secret to rotate", async () => {
+    renderPage(withStandardRoutes({ app: application({ clientType: "PUBLIC" }) }));
+
+    await screen.findByText("Web Client");
+    expect(screen.queryByRole("button", { name: "Rotate client secret" })).not.toBeInTheDocument();
+    expect(screen.getByText(/PUBLIC applications have no client secret to rotate/i)).toBeInTheDocument();
+  });
+
+  it("disables rotation for a non-ACTIVE application", async () => {
+    renderPage(withStandardRoutes({ app: application({ status: "DISABLED" }) }));
+
+    await screen.findByText("Web Client");
+    expect(screen.getByRole("button", { name: "Rotate client secret" })).toBeDisabled();
+  });
+
+  it("surfaces a 409 CONCURRENT_MODIFICATION verbatim rather than a generic message", async () => {
+    const user = userEvent.setup();
+    renderPage(withStandardRoutes({ onRotate: () => jsonResponse(409, null, "This application was modified concurrently — please retry") }));
+
+    await screen.findByText("Web Client");
+    await user.click(screen.getByRole("button", { name: "Rotate client secret" }));
+    const confirmDialog = await screen.findByRole("dialog");
+    await user.click(within(confirmDialog).getByRole("button", { name: "Rotate secret" }));
+
+    expect(await screen.findByText("This application was modified concurrently — please retry")).toBeInTheDocument();
+  });
+
+  it("rotating a service account's credential also requires confirmation and shows the new value exactly once", async () => {
+    const user = userEvent.setup();
+    renderPage(
+      withStandardRoutes({
+        serviceAccounts: [{ id: "sa-1", applicationId: "app-1", name: "worker", status: "ACTIVE", credentialCreatedAt: "2026-01-01T00:00:00.000Z", credentialRevokedAt: null, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: null }],
+      }),
+    );
+
+    await screen.findByText("Web Client");
+    await user.click(await screen.findByRole("button", { name: "Rotate credential" }));
+    const confirmDialog = await screen.findByRole("dialog");
+    expect(within(confirmDialog).getByText(/immediately invalidate the existing one/i)).toBeInTheDocument();
+    await user.click(within(confirmDialog).getByRole("button", { name: "Rotate credential" }));
+
+    expect(await screen.findByText(/worker's credential was rotated/i)).toBeInTheDocument();
+    expect(localStorage.length).toBe(0);
   });
 });

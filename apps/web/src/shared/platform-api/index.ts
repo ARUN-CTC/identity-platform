@@ -21,12 +21,15 @@ export {
 } from "./auth";
 export {
   activatePlatformTenant,
+  bootstrapPlatformTenant,
   createPlatformTenant,
   deletePlatformTenant,
   getPlatformTenant,
   listPlatformTenants,
   suspendPlatformTenant,
   updatePlatformTenant,
+  type BootstrapTenantInput,
+  type BootstrapTenantResult,
   type CreateTenantInput,
   type PlatformTenant,
   type TenantStatus,
@@ -72,6 +75,7 @@ export {
   createApplication,
   getPlatformApplication,
   listApplicationsForProduct,
+  rotateApplicationSecret,
   updatePlatformApplication,
   type ApplicationStatus,
   type ClientType,
@@ -88,6 +92,7 @@ export {
   listServiceAccountGrantsForTenant,
   listServiceAccountsForApplication,
   reactivateServiceAccountGrant,
+  rotateServiceAccountCredential,
   updatePlatformServiceAccount,
   updateServiceAccountGrantStatus,
   type CreatedServiceAccount,
@@ -97,4 +102,5 @@ export {
   type ServiceAccountStatus,
   type ServiceAccountTenantGrant,
 } from "./service-accounts";
+export { listSigningKeys, type JsonWebKey } from "./jwks";
 export { ApiError } from "../api/types";

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { createServiceAccount, listServiceAccountsForApplication, updatePlatformServiceAccount, type ServiceAccountStatus } from "@/shared/platform-api";
+import { createServiceAccount, listServiceAccountsForApplication, rotateServiceAccountCredential, updatePlatformServiceAccount, type ServiceAccountStatus } from "@/shared/platform-api";
 
 const keys = {
   forApplication: (applicationId: string) => ["platform", "applications", applicationId, "service-accounts"] as const,
@@ -26,6 +26,15 @@ export function useUpdateServiceAccountMutation(applicationId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, status }: { id: string; status: ServiceAccountStatus }) => updatePlatformServiceAccount(id, { status }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.forApplication(applicationId) }),
+  });
+}
+
+/** Phase 2UI.2/2UI.3 — atomic replacement; never touches applicationId/status/tenant grants. */
+export function useRotateServiceAccountCredentialMutation(applicationId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => rotateServiceAccountCredential(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.forApplication(applicationId) }),
   });
 }

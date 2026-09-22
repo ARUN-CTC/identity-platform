@@ -21,6 +21,13 @@ const PlatformApplicationDetailPage = lazy(() => import("../features/application
 const PlatformOperatorsPage = lazy(() => import("../features/operators/pages/PlatformOperatorsPage"));
 const PlatformOperatorDetailPage = lazy(() => import("../features/operators/pages/PlatformOperatorDetailPage"));
 const PlatformAuditPage = lazy(() => import("../features/audit/pages/PlatformAuditPage"));
+const PlatformUsersPage = lazy(() => import("../pages/PlatformUsersPage"));
+const PlatformMembershipsPage = lazy(() => import("../pages/PlatformMembershipsPage"));
+const PlatformInvitationsPage = lazy(() => import("../pages/PlatformInvitationsPage"));
+const PlatformApplicationsIndexPage = lazy(() => import("../pages/PlatformApplicationsIndexPage"));
+const PlatformServiceAccountsIndexPage = lazy(() => import("../pages/PlatformServiceAccountsIndexPage"));
+const PlatformSigningKeysPage = lazy(() => import("../pages/PlatformSigningKeysPage"));
+const PlatformConfigurationPage = lazy(() => import("../pages/PlatformConfigurationPage"));
 
 /**
  * The entire Platform Operator Console route subtree — a top-level sibling
@@ -126,6 +133,36 @@ export const platformConsoleRoutes = {
                 </PlatformPermissionRoute>
               ),
             },
+            // Phase 2UI.3 — the following six routes are documented API
+            // gaps (docs/PHASE_2UI3.md): no backend list endpoint exists
+            // for any of them yet, so none is gated behind a real
+            // permission that would mean anything (Users/Memberships/
+            // Invitations/Configuration/Signing-Keys have no dedicated
+            // permission code at all — Signing Keys is public JWKS data
+            // regardless). Applications/Service Accounts DO reuse their
+            // real VIEW permission, since a cross-product/cross-application
+            // list is a genuine extension of that same capability once built.
+            { path: "platform-console/users", element: <PlatformUsersPage /> },
+            { path: "platform-console/memberships", element: <PlatformMembershipsPage /> },
+            { path: "platform-console/invitations", element: <PlatformInvitationsPage /> },
+            {
+              path: "platform-console/applications",
+              element: (
+                <PlatformPermissionRoute permission={PLATFORM_PERMISSIONS.APPLICATION_VIEW}>
+                  <PlatformApplicationsIndexPage />
+                </PlatformPermissionRoute>
+              ),
+            },
+            {
+              path: "platform-console/service-accounts",
+              element: (
+                <PlatformPermissionRoute permission={PLATFORM_PERMISSIONS.SERVICE_ACCOUNT_VIEW}>
+                  <PlatformServiceAccountsIndexPage />
+                </PlatformPermissionRoute>
+              ),
+            },
+            { path: "platform-console/signing-keys", element: <PlatformSigningKeysPage /> },
+            { path: "platform-console/configuration", element: <PlatformConfigurationPage /> },
             { path: "platform-console/*", element: <PlatformNotFoundPage /> },
           ],
         },

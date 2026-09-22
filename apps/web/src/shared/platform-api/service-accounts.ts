@@ -18,8 +18,9 @@ export interface PlatformServiceAccount {
 /**
  * `create()`'s response includes the plaintext credential exactly once —
  * it is never shown again after this call (backend never returns
- * `credentialHash` from any endpoint). No rotation/revocation endpoint
- * exists in this backend at all — do not add one here.
+ * `credentialHash` from any endpoint). `rotateServiceAccountCredential()`
+ * below (Phase 2UI.2) is the only other call that ever sees a plaintext
+ * value — a distinct action from create, never a "read" of the existing one.
  */
 export interface CreatedServiceAccount extends PlatformServiceAccount {
   credential: string;
@@ -53,6 +54,16 @@ export function createServiceAccount(applicationId: string, name: string): Promi
 
 export function updatePlatformServiceAccount(id: string, input: { name?: string; status?: ServiceAccountStatus }): Promise<PlatformServiceAccount> {
   return platformApiRequest<PlatformServiceAccount>(`/service-accounts/${id}`, { method: "PATCH", body: input });
+}
+
+/**
+ * Phase 2UI.2 backend, Phase 2UI.3 frontend. Gated on SERVICE_ACCOUNT_MANAGE.
+ * ATOMIC REPLACEMENT, only for an ACTIVE service account (409 for
+ * SUSPENDED/DISABLED). Never touches applicationId, status, or tenant
+ * grants — only the credential itself.
+ */
+export function rotateServiceAccountCredential(id: string): Promise<CreatedServiceAccount> {
+  return platformApiRequest<CreatedServiceAccount>(`/service-accounts/${id}/credentials/rotate`, { method: "POST" });
 }
 
 const grantsBase = (tenantId: string) => `/platform/tenants/${tenantId}/service-account-grants`;

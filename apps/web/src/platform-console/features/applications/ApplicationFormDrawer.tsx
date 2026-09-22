@@ -115,7 +115,12 @@ export function ApplicationFormDrawer({ open, onClose, productId, onCreated }: {
         <TextField {...register("redirectUris")} label="Redirect URIs" fullWidth helperText="Comma-separated. HTTPS required except localhost. Required if authorization_code is checked." />
         <TextField {...register("allowedOrigins")} label="Allowed origins (CORS)" fullWidth helperText="Comma-separated. Optional." />
         <TextField {...register("allowedScopes")} label="Allowed scopes" fullWidth helperText={`Comma-separated. Standard OIDC scopes (openid, profile, email) or namespaced under this product's own slug.`} />
-        <TextField {...register("audiences")} label="Audiences" fullWidth helperText="Comma-separated resource-API identifiers this app may request a token for." />
+        <TextField
+          {...register("audiences")}
+          label="Audiences"
+          fullWidth
+          helperText="Comma-separated resource-API identifiers this app may request a token for. An audience is NOT the client ID, a scope, or a permission — it names WHICH resource server the token is for; without at least one, /oauth/authorize rejects every login attempt for this application."
+        />
       </Stack>
     </FormDrawer>
   );

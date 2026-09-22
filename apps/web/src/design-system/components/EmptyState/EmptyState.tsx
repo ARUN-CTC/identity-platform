@@ -1,3 +1,4 @@
+import ConstructionOutlinedIcon from "@mui/icons-material/ConstructionOutlined";
 import InboxOutlinedIcon from "@mui/icons-material/InboxOutlined";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import ReportProblemOutlinedIcon from "@mui/icons-material/ReportProblemOutlined";
@@ -8,7 +9,7 @@ import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import type { ReactNode } from "react";
 
-export type EmptyStateVariant = "no-data" | "no-results" | "permission-denied" | "not-found" | "network-error";
+export type EmptyStateVariant = "no-data" | "no-results" | "permission-denied" | "not-found" | "network-error" | "not-available";
 
 const VARIANT_ICON: Record<EmptyStateVariant, typeof InboxOutlinedIcon> = {
   "no-data": InboxOutlinedIcon,
@@ -16,6 +17,12 @@ const VARIANT_ICON: Record<EmptyStateVariant, typeof InboxOutlinedIcon> = {
   "permission-denied": LockOutlinedIcon,
   "not-found": ReportProblemOutlinedIcon,
   "network-error": WifiOffOutlinedIcon,
+  // Phase 2UI.3 — a capability with no backing API yet (not "zero rows
+  // today," a genuinely different state: this platform doesn't yet expose
+  // an endpoint for it at all). Distinct from "no-data" on purpose — see
+  // docs/IDENTITY_UX_GAP_ANALYSIS.md and docs/PHASE_2UI3.md's own API Gap
+  // table for what this covers and why each was left undone this phase.
+  "not-available": ConstructionOutlinedIcon,
 };
 
 export interface EmptyStateProps {

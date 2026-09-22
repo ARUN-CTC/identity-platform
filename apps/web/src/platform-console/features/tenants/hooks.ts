@@ -2,12 +2,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   activatePlatformTenant,
+  bootstrapPlatformTenant,
   createPlatformTenant,
   deletePlatformTenant,
   getPlatformTenant,
   listPlatformTenants,
   suspendPlatformTenant,
   updatePlatformTenant,
+  type BootstrapTenantInput,
   type CreateTenantInput,
   type UpdateTenantInput,
 } from "@/shared/platform-api";
@@ -81,5 +83,13 @@ export function useDeletePlatformTenantMutation() {
   return useMutation({
     mutationFn: (id: string) => deletePlatformTenant(id),
     onSuccess: () => invalidate(),
+  });
+}
+
+export function useBootstrapPlatformTenantMutation(id: string) {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: (input: BootstrapTenantInput) => bootstrapPlatformTenant(id, input),
+    onSuccess: () => invalidate(id),
   });
 }

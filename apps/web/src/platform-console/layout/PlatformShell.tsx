@@ -9,10 +9,12 @@ import List from "@mui/material/List";
 import ListItemButton from "@mui/material/ListItemButton";
 import ListItemIcon from "@mui/material/ListItemIcon";
 import ListItemText from "@mui/material/ListItemText";
+import ListSubheader from "@mui/material/ListSubheader";
 import Stack from "@mui/material/Stack";
 import Toolbar from "@mui/material/Toolbar";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
+import { Fragment } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 
 import { platformNavigation } from "../navigation";
@@ -39,7 +41,9 @@ export function PlatformShell() {
     navigate("/platform-console/login", { replace: true });
   };
 
-  const visibleItems = platformNavigation.filter((item) => !item.permission || hasPlatformPermission(item.permission));
+  const visibleSections = platformNavigation
+    .map((section) => ({ ...section, items: section.items.filter((item) => !item.permission || hasPlatformPermission(item.permission)) }))
+    .filter((section) => section.items.length > 0);
 
   return (
     <Box sx={{ display: "flex", minHeight: "100vh" }}>
@@ -77,20 +81,34 @@ export function PlatformShell() {
         }}
       >
         <Toolbar />
-        <List sx={{ pt: 2 }}>
-          {visibleItems.map((item) => (
-            <ListItemButton
-              key={item.id}
-              component={NavLink}
-              to={item.path}
-              end={item.path === "/platform-console"}
-              sx={{ "&.active": { bgcolor: "action.selected", borderRight: 3, borderColor: "warning.main" } }}
-            >
-              <ListItemIcon>
-                <item.icon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText primary={item.label} />
-            </ListItemButton>
+        <List sx={{ pt: 1 }}>
+          {visibleSections.map((section, index) => (
+            <Fragment key={section.label ?? `section-${index}`}>
+              {section.label && (
+                <ListSubheader component="div" sx={{ bgcolor: "transparent", lineHeight: "32px", fontSize: 11, fontWeight: 600, letterSpacing: 0.5, textTransform: "uppercase" }}>
+                  {section.label}
+                </ListSubheader>
+              )}
+              {section.items.map((item) => (
+                <ListItemButton
+                  key={item.id}
+                  component={NavLink}
+                  to={item.path}
+                  end={item.path === "/platform-console"}
+                  sx={{ "&.active": { bgcolor: "action.selected", borderRight: 3, borderColor: "warning.main" } }}
+                >
+                  <ListItemIcon>
+                    <item.icon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText primary={item.label} />
+                  {item.apiGap && (
+                    <Tooltip title="Backend API required — see docs/PHASE_2UI3.md">
+                      <Chip label="soon" size="small" variant="outlined" sx={{ height: 18, fontSize: 10 }} />
+                    </Tooltip>
+                  )}
+                </ListItemButton>
+              ))}
+            </Fragment>
           ))}
         </List>
       </Drawer>

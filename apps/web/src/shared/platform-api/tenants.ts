@@ -64,3 +64,43 @@ export function suspendPlatformTenant(id: string): Promise<PlatformTenant> {
 export function deletePlatformTenant(id: string): Promise<null> {
   return platformApiRequest<null>(`${BASE}/${id}`, { method: "DELETE" });
 }
+
+// Phase 2UI.2 backend, Phase 2UI.3 frontend — mirrors
+// src/modules/tenants/dto/bootstrap-tenant.dto.ts exactly. Deliberately
+// flat (not nested organization/administrator objects) for the same
+// reason the backend DTO is flat — see that file's own doc comment: no
+// DTO in this codebase's backend uses nested validation, so the frontend
+// input shape mirrors it 1:1 rather than inventing its own nesting.
+export interface BootstrapTenantInput {
+  organizationName: string;
+  organizationTypeId?: string;
+  organizationCode?: string;
+  administratorEmail: string;
+  administratorFirstName: string;
+  administratorLastName: string;
+  productIds?: string[];
+}
+
+export interface BootstrapTenantResult {
+  tenant: PlatformTenant;
+  organization: { id: string; tenantId: string; organizationCode: string; organizationName: string; status: string };
+  administrator: { id: string; email: string; isNewIdentity: boolean };
+  membership: { id: string; status: "ACTIVE" | "INVITED" };
+  roleAssigned: string;
+  entitlements: { productId: string; status: string }[];
+  invitationSent: boolean;
+}
+
+/**
+ * Gated on PLATFORM_TENANT_MANAGE (the same permission create()/update()
+ * already require — no new permission code exists for this). One real
+ * transaction server-side: creates the Organization, finds-or-creates the
+ * global Administrator identity, the Membership, the TENANT_ADMIN role
+ * grant, and any requested Product Entitlements atomically. Only callable
+ * once per tenant — a tenant that already has an Organization (or isn't
+ * PROVISIONING) is rejected with 409, real and DB-enforced, not merely a
+ * client-side guard. See docs/TENANT_BOOTSTRAP.md.
+ */
+export function bootstrapPlatformTenant(id: string, input: BootstrapTenantInput): Promise<BootstrapTenantResult> {
+  return platformApiRequest<BootstrapTenantResult>(`${BASE}/${id}/bootstrap`, { method: "POST", body: input });
+}

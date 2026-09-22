@@ -72,7 +72,18 @@ export function createApplication(productId: string, input: CreateApplicationInp
   return platformApiRequest<CreatedApplication>(`/products/${productId}/applications`, { method: "POST", body: input });
 }
 
-/** No secret rotation/revocation endpoint exists in this backend at all — do not add one here. */
 export function updatePlatformApplication(id: string, input: UpdateApplicationInput): Promise<PlatformApplication> {
   return platformApiRequest<PlatformApplication>(`/applications/${id}`, { method: "PATCH", body: input });
+}
+
+/**
+ * Phase 2UI.2 backend, Phase 2UI.3 frontend. Gated on APPLICATION_MANAGE.
+ * ATOMIC REPLACEMENT — the old secret stops verifying the instant this
+ * commits, no overlap window (see docs/CREDENTIAL_ROTATION.md). Only valid
+ * for a CONFIDENTIAL, ACTIVE application (400/409 otherwise). The response
+ * shows the new plaintext exactly once, same as create() — never returned
+ * by any later GET.
+ */
+export function rotateApplicationSecret(id: string): Promise<CreatedApplication> {
+  return platformApiRequest<CreatedApplication>(`/applications/${id}/credentials/rotate`, { method: "POST" });
 }
