@@ -1,6 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable } from '@nestjs/common';
 import { Prisma, ServiceAccount } from '@prisma/client';
-import { PaginatedResult, PaginationQueryDto, RequestContextService, ResourceConflictException, ResourceNotFoundException, generateClientSecret, hashClientSecret } from '../../../common';
+import { AppException, PaginatedResult, PaginationQueryDto, RequestContextService, ResourceConflictException, ResourceNotFoundException, generateClientSecret, hashClientSecret } from '../../../common';
 import { ApplicationsService } from '../../applications/services';
 import { SecurityEventsService } from '../../security-audit/services';
 import { CreateServiceAccountDto } from '../dto/create-service-account.dto';
@@ -105,6 +105,46 @@ export class ServiceAccountsService {
     });
 
     const { credentialHash: _credentialHash, ...rest } = serviceAccount;
+    return { ...rest, credential: plainCredential };
+  }
+
+  /**
+   * Phase 2UI.2 (docs/CREDENTIAL_ROTATION.md) — the same rotation
+   * capability ApplicationsService.rotateSecret() adds for client secrets,
+   * for the DIFFERENT credential a ServiceAccount holds (never derived
+   * from, shared with, or confused with its parent Application's own
+   * secret — same boundary create() above already documents). ATOMIC
+   * REPLACEMENT, same operational consequence: the old credential stops
+   * verifying immediately. applicationId, tenant grants, and entitlements
+   * are never touched — enforced structurally by
+   * ServiceAccountsRepository.rotateCredential() only ever writing the
+   * three credential columns.
+   */
+  async rotateCredential(id: string): Promise<CreatedServiceAccount> {
+    const existing = await this.repository.findById(id);
+    if (!existing) {
+      throw new ResourceNotFoundException('ServiceAccount', id);
+    }
+    if (existing.status !== 'ACTIVE') {
+      throw new AppException('SERVICE_ACCOUNT_NOT_ROTATABLE', `Cannot rotate a credential while the service account's status is ${existing.status} (must be ACTIVE)`, HttpStatus.CONFLICT);
+    }
+
+    const plainCredential = generateClientSecret();
+    const applied = await this.repository.rotateCredential(id, existing.version, hashClientSecret(plainCredential));
+    if (!applied) {
+      throw new AppException('CONCURRENT_MODIFICATION', 'This service account was modified concurrently — please retry', HttpStatus.CONFLICT);
+    }
+
+    await this.securityEvents.recordPlatformEvent({
+      actorUserId: this.context.userId,
+      eventType: 'SERVICE_ACCOUNT_CREDENTIAL_ROTATED',
+      resourceType: 'ServiceAccount',
+      resourceId: id,
+      metadata: {},
+    });
+
+    const refreshed = await this.repository.findById(id);
+    const { credentialHash: _credentialHash, ...rest } = refreshed!;
     return { ...rest, credential: plainCredential };
   }
 

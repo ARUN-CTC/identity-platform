@@ -2,8 +2,10 @@ import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PaginationQueryDto, Public, RequirePlatformPermissions, ResponseMessage } from '../../../common';
 import { PlatformJwtAuthGuard, PlatformPermissionsGuard } from '../../platform-operators/guards';
+import { BootstrapTenantDto } from '../dto/bootstrap-tenant.dto';
 import { CreateTenantDto } from '../dto/create-tenant.dto';
 import { UpdateTenantDto } from '../dto/update-tenant.dto';
+import { TenantBootstrapService } from '../services/tenant-bootstrap.service';
 import { TenantsService } from '../services/tenants.service';
 
 /**
@@ -28,7 +30,10 @@ import { TenantsService } from '../services/tenants.service';
 @UseGuards(PlatformJwtAuthGuard, PlatformPermissionsGuard)
 @Controller('platform/tenants')
 export class PlatformTenantsController {
-  constructor(private readonly tenantsService: TenantsService) {}
+  constructor(
+    private readonly tenantsService: TenantsService,
+    private readonly bootstrapService: TenantBootstrapService,
+  ) {}
 
   @Get()
   @RequirePlatformPermissions('PLATFORM_TENANT_VIEW')
@@ -50,6 +55,24 @@ export class PlatformTenantsController {
   @ResponseMessage('Tenant created successfully')
   create(@Body() dto: CreateTenantDto) {
     return this.tenantsService.create(dto);
+  }
+
+  /**
+   * Phase 2UI.2 (docs/TENANT_BOOTSTRAP.md) — fills the gap Phase 2UI.1
+   * found: create() above produces only the `tenant` row; this is the only
+   * supported way to give that tenant its first Organization and
+   * Administrator afterward. Reuses PLATFORM_TENANT_MANAGE (the same
+   * permission `create()`/`update()`/`activate()` already require) rather
+   * than inventing a new permission code. Only callable once per tenant —
+   * see TenantBootstrapService for the exact idempotency/concurrency
+   * guarantee (a real unique-constraint collision, not a soft check alone).
+   */
+  @Post(':id/bootstrap')
+  @RequirePlatformPermissions('PLATFORM_TENANT_MANAGE')
+  @ApiOperation({ summary: "Bootstrap a PROVISIONING tenant's first Organization, Administrator, and (optionally) Product Entitlements — atomically" })
+  @ResponseMessage('Tenant bootstrapped successfully')
+  bootstrap(@Param('id', ParseUUIDPipe) id: string, @Body() dto: BootstrapTenantDto) {
+    return this.bootstrapService.bootstrap(id, dto);
   }
 
   @Patch(':id')

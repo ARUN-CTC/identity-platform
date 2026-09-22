@@ -174,6 +174,54 @@ export class ApplicationsService {
   }
 
   /**
+   * Phase 2UI.2 (docs/CREDENTIAL_ROTATION.md) — the P0 gap Phase 2UI.1
+   * found: a leaked production client_secret previously had no remedy
+   * except recreating the entire Application. This is ATOMIC REPLACEMENT,
+   * not overlapping/graceful rotation: the old secret stops verifying the
+   * instant this commits, matching this platform's existing one-time-
+   * reveal philosophy (OneTimeSecretDialog) rather than adding a new
+   * multi-credential entity for a capability nothing in this codebase's
+   * existing Application schema was built to support (a single
+   * `clientSecretHash` column, not a one-to-many credential table) — see
+   * that doc's own "Rotation semantics" section for the full reasoning and
+   * the documented operational consequence.
+   */
+  async rotateSecret(id: string): Promise<CreatedApplication> {
+    const existing = await this.repository.findById(id);
+    if (!existing) {
+      throw new ResourceNotFoundException('Application', id);
+    }
+    if (existing.clientType !== 'CONFIDENTIAL') {
+      throw new AppException('APPLICATION_NOT_ROTATABLE', 'Only a CONFIDENTIAL application has a client secret to rotate — a PUBLIC application has none', HttpStatus.BAD_REQUEST);
+    }
+    if (existing.status !== 'ACTIVE') {
+      throw new AppException('APPLICATION_NOT_ROTATABLE', `Cannot rotate a client secret while the application's status is ${existing.status} (must be ACTIVE)`, HttpStatus.CONFLICT);
+    }
+
+    const plainSecret = generateClientSecret();
+    const applied = await this.repository.rotateSecret(id, existing.version, hashClientSecret(plainSecret));
+    if (!applied) {
+      throw new AppException('CONCURRENT_MODIFICATION', 'This application was modified concurrently — please retry', HttpStatus.CONFLICT);
+    }
+
+    await this.securityEvents.recordPlatformEvent({
+      actorUserId: this.context.userId,
+      eventType: 'CLIENT_CREDENTIAL_ROTATED',
+      resourceType: 'Application',
+      resourceId: id,
+      // Never the secret itself, never its hash — only the fact that a
+      // rotation happened and which client_id it applies to (clientId is
+      // a public, non-secret identifier, safe to log — see
+      // client-credential.util.ts's own header comment).
+      metadata: { clientId: existing.clientId },
+    });
+
+    const refreshed = await this.repository.findById(id);
+    const { clientSecretHash: _clientSecretHash, ...rest } = refreshed!;
+    return { ...rest, clientSecret: plainSecret };
+  }
+
+  /**
    * Every registration-time rule, composed — delegates entirely to the
    * dedicated policy classes (never reimplemented here) plus the two
    * cross-field rules that don't belong to any single policy:

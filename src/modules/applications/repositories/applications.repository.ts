@@ -51,6 +51,26 @@ export class ApplicationsRepository {
   }
 
   /**
+   * Phase 2UI.2 (docs/CREDENTIAL_ROTATION.md) — optimistic-lock conditional
+   * update, exactly the same `updateMany` + WHERE-guard +
+   * `result.count === 1` pattern TenantProductEntitlementsRepository.transition()
+   * already uses for its own concurrency safety. Two simultaneous rotation
+   * requests both read the same `expectedVersion`; only the first UPDATE to
+   * commit actually applies (its WHERE clause still matches), the second's
+   * WHERE clause no longer matches (the trigger-maintained `version` column
+   * has already advanced) and this returns false — the caller turns that
+   * into a 409 rather than silently overwriting a secret the first request
+   * already returned to its own caller.
+   */
+  async rotateSecret(id: string, expectedVersion: bigint, newSecretHash: string): Promise<boolean> {
+    const result = await this.prisma.application.updateMany({
+      where: { id, version: expectedVersion },
+      data: { clientSecretHash: newSecretHash, secretCreatedAt: new Date(), secretRevokedAt: null, updatedBy: this.context.userId },
+    });
+    return result.count === 1;
+  }
+
+  /**
    * PHASE 2D.2 SECURITY FIX — explicit field allow-list, never `{...dto}`.
    * Spreading the whole DTO into Prisma's `data` made the write path's only
    * defense against a client sending an unrecognized property (e.g.

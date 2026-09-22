@@ -53,4 +53,21 @@ export class ServiceAccountsRepository {
       },
     });
   }
+
+  /**
+   * Phase 2UI.2 (docs/CREDENTIAL_ROTATION.md) — same optimistic-lock
+   * `updateMany` + version-WHERE-guard pattern ApplicationsRepository.rotateSecret()
+   * and TenantProductEntitlementsRepository.transition() already use.
+   * Explicitly never touches applicationId, tenantGrants, or any
+   * entitlement-adjacent data — only the credential fields — so rotation
+   * can never accidentally change what this ServiceAccount is authorized
+   * to do, only what proves it's the one doing it.
+   */
+  async rotateCredential(id: string, expectedVersion: bigint, newCredentialHash: string): Promise<boolean> {
+    const result = await this.prisma.serviceAccount.updateMany({
+      where: { id, version: expectedVersion },
+      data: { credentialHash: newCredentialHash, credentialCreatedAt: new Date(), credentialRevokedAt: null, updatedBy: this.context.userId },
+    });
+    return result.count === 1;
+  }
 }

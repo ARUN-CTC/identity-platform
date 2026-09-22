@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public, RequirePlatformPermissions, ResponseMessage } from '../../../common';
 import { PlatformJwtAuthGuard, PlatformPermissionsGuard } from '../../platform-operators/guards';
@@ -26,5 +26,20 @@ export class ApplicationsController {
   @ResponseMessage('Application updated successfully')
   update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateApplicationDto) {
     return this.service.update(id, dto);
+  }
+
+  /**
+   * Phase 2UI.2 (docs/CREDENTIAL_ROTATION.md) — no request body: rotation
+   * takes no input, matching the existing "credentials/rotate" action-verb
+   * convention this endpoint's route mirrors (POST .../:id/reactivate
+   * elsewhere in this codebase takes no body either). ATOMIC REPLACEMENT —
+   * the old secret stops verifying immediately; see the doc for why.
+   */
+  @Post(':id/credentials/rotate')
+  @HttpCode(HttpStatus.OK)
+  @RequirePlatformPermissions('APPLICATION_MANAGE')
+  @ApiOperation({ summary: "Rotate an application's client secret — the new plaintext value is shown exactly once, in this response, never again" })
+  rotateSecret(@Param('id', ParseUUIDPipe) id: string) {
+    return this.service.rotateSecret(id);
   }
 }
