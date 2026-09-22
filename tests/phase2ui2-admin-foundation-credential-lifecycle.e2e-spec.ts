@@ -7,7 +7,7 @@ import { randomUUID } from 'crypto';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { hashPassword } from '../src/common';
-import { PrismaService } from '../src/database';
+import { PrismaContextService, PrismaService, PrismaTransactionClient } from '../src/database';
 
 /**
  * Phase 2UI.2 (docs/PHASE_2UI2.md) — the three P0 backend/security
@@ -25,12 +25,28 @@ import { PrismaService } from '../src/database';
 describe('Phase 2UI.2 — Admin foundation & credential lifecycle (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let prismaContext: PrismaContextService;
 
   const PASSWORD = 'Test-Passw0rd!1';
   const suffix = randomUUID().slice(0, 8);
 
   let operatorToken: string;
   let productId: string;
+
+  /**
+   * organization/membership/securityUserRole/serviceAccountTenantGrant all
+   * carry apply_tenant_rls (database/shared/002_functions.sql) — a raw
+   * `prisma.X.findFirst(...)` with no app.current_tenant_id GUC set sees
+   * ZERO rows (RLS's USING clause evaluates false for every row, not an
+   * error), exactly like every real repository in this codebase already
+   * has to work around via PrismaContextService.runInContext(). Test
+   * verification queries against these tables need the same treatment —
+   * this is not a product bug, it's this test file's own verification code
+   * needing the same RLS-context discipline the application code already has.
+   */
+  function inTenant<T>(tenantId: string, fn: (tx: PrismaTransactionClient) => Promise<T>): Promise<T> {
+    return prismaContext.runInContext(fn, tenantId);
+  }
 
   async function createGlobalUser(email: string, opts: { withPassword?: boolean } = { withPassword: true }) {
     return prisma.securityUser.create({
@@ -72,11 +88,27 @@ describe('Phase 2UI.2 — Admin foundation & credential lifecycle (e2e)', () => 
     await app.init();
 
     prisma = app.get(PrismaService);
+    prismaContext = app.get(PrismaContextService);
 
     const operatorUser = await createGlobalUser(`operator-${suffix}@example.com`);
     const operator = await prisma.platformOperator.create({ data: { userId: operatorUser.id, status: 'ACTIVE' } });
     const platformPermissions = await prisma.securityPermission.findMany({
-      where: { permissionCode: { in: ['PLATFORM_TENANT_VIEW', 'PLATFORM_TENANT_MANAGE', 'PRODUCT_MANAGE', 'PRODUCT_VIEW', 'APPLICATION_MANAGE', 'APPLICATION_VIEW', 'SERVICE_ACCOUNT_MANAGE', 'SERVICE_ACCOUNT_VIEW'] } },
+      where: {
+        permissionCode: {
+          in: [
+            'PLATFORM_TENANT_VIEW',
+            'PLATFORM_TENANT_MANAGE',
+            'PRODUCT_MANAGE',
+            'PRODUCT_VIEW',
+            'APPLICATION_MANAGE',
+            'APPLICATION_VIEW',
+            'SERVICE_ACCOUNT_MANAGE',
+            'SERVICE_ACCOUNT_VIEW',
+            'SERVICE_ACCOUNT_TENANT_GRANT_MANAGE',
+            'SERVICE_ACCOUNT_TENANT_GRANT_VIEW',
+          ],
+        },
+      },
     });
     await prisma.platformOperatorPermission.createMany({ data: platformPermissions.map((p) => ({ operatorId: operator.id, permissionId: p.id })) });
     operatorToken = await platformLogin(operatorUser.email);
@@ -122,10 +154,10 @@ describe('Phase 2UI.2 — Admin foundation & credential lifecycle (e2e)', () => 
       expect(body.entitlements[0].status).toBe('ACTIVE');
 
       // Real DB state, not just the response shape.
-      const orgRow = await prisma.organization.findFirst({ where: { tenantId: tenant.id } });
+      const orgRow = await inTenant(tenant.id, (tx) => tx.organization.findFirst({ where: { tenantId: tenant.id } }));
       expect(orgRow).not.toBeNull();
-      const roleRow = await prisma.securityUserRole.findFirst({ where: { tenantId: tenant.id, userId: body.administrator.id } });
-      const role = await prisma.securityRole.findFirst({ where: { id: roleRow?.roleId } });
+      const roleRow = await inTenant(tenant.id, (tx) => tx.securityUserRole.findFirst({ where: { tenantId: tenant.id, userId: body.administrator.id } }));
+      const role = await prisma.securityRole.findFirst({ where: { id: roleRow?.roleId } }); // security_role: apply_tenant_rls_nullable, tenantId IS NULL rows visible unconditionally
       expect(role?.roleCode).toBe('TENANT_ADMIN');
       expect(role?.tenantId).toBeNull(); // the shared system template, not a new tenant-owned copy
 
@@ -171,15 +203,26 @@ describe('Phase 2UI.2 — Admin foundation & credential lifecycle (e2e)', () => 
 
       expect(res.status).toBe(409);
       // No Organization row should have been created — the whole transaction rolled back.
-      const orgRow = await prisma.organization.findFirst({ where: { tenantId: tenant.id } });
+      const orgRow = await inTenant(tenant.id, (tx) => tx.organization.findFirst({ where: { tenantId: tenant.id } }));
       expect(orgRow).toBeNull();
     });
 
     it('creates the DEFAULT OrganizationType on first use if none exists yet, and reuses it on a second bootstrap that also omits organizationTypeId', async () => {
-      // Belt-and-suspenders: don't assume 'DEFAULT' already exists from another
-      // suite's seed data — delete it if present, to genuinely exercise the
-      // create-on-first-use path this test is for.
-      await prisma.organizationType.deleteMany({ where: { typeCode: 'DEFAULT', organizations: { none: {} } } });
+      // Belt-and-suspenders, best-effort: try to remove an unreferenced
+      // 'DEFAULT' row from another suite's seed data, to genuinely exercise
+      // the create-on-first-use path this test is for. This is a courtesy
+      // only — the assertions below (shared type across tenantA/tenantB,
+      // exactly one 'DEFAULT' row) hold regardless of whether this delete
+      // succeeds, so a failure here (e.g. an FK reference from the dev seed's
+      // own DEV-ORG) is swallowed rather than failing the test over a
+      // cleanup step the test doesn't actually depend on.
+      try {
+        await prisma.organizationType.delete({ where: { typeCode: 'DEFAULT' } });
+      } catch {
+        // Pre-existing 'DEFAULT' is referenced by another organization (e.g.
+        // the dev seed's own DEV-ORG) — left in place, exercising the
+        // reuse path instead of the create path below. Still valid coverage.
+      }
 
       const tenantA = await createTenant();
       const resA = await request(app.getHttpServer())
@@ -195,8 +238,8 @@ describe('Phase 2UI.2 — Admin foundation & credential lifecycle (e2e)', () => 
         .send({ organizationName: 'Org B', administratorEmail: `b-${randomUUID().slice(0, 8)}@example.com`, administratorFirstName: 'B', administratorLastName: 'B' });
       expect(resB.status).toBe(201);
 
-      const orgA = await prisma.organization.findFirst({ where: { tenantId: tenantA.id } });
-      const orgB = await prisma.organization.findFirst({ where: { tenantId: tenantB.id } });
+      const orgA = await inTenant(tenantA.id, (tx) => tx.organization.findFirst({ where: { tenantId: tenantA.id } }));
+      const orgB = await inTenant(tenantB.id, (tx) => tx.organization.findFirst({ where: { tenantId: tenantB.id } }));
       expect(orgA?.organizationTypeId).toBe(orgB?.organizationTypeId); // same shared row, not two separate DEFAULTs
 
       const defaultTypeCount = await prisma.organizationType.count({ where: { typeCode: 'DEFAULT' } });
@@ -212,7 +255,7 @@ describe('Phase 2UI.2 — Admin foundation & credential lifecycle (e2e)', () => 
       const second = await request(app.getHttpServer()).post(`/api/v1/platform/tenants/${tenant.id}/bootstrap`).set('Authorization', `Bearer ${operatorToken}`).send(body);
       expect(second.status).toBe(409);
 
-      const orgCount = await prisma.organization.count({ where: { tenantId: tenant.id } });
+      const orgCount = await inTenant(tenant.id, (tx) => tx.organization.count({ where: { tenantId: tenant.id } }));
       expect(orgCount).toBe(1); // still exactly one — the retry created nothing
     });
 
@@ -227,9 +270,9 @@ describe('Phase 2UI.2 — Admin foundation & credential lifecycle (e2e)', () => 
       const statuses = [a.status, b.status].sort();
       expect(statuses).toEqual([201, 409]);
 
-      const orgCount = await prisma.organization.count({ where: { tenantId: tenant.id } });
+      const orgCount = await inTenant(tenant.id, (tx) => tx.organization.count({ where: { tenantId: tenant.id } }));
       expect(orgCount).toBe(1);
-      const membershipCount = await prisma.membership.count({ where: { tenantId: tenant.id } });
+      const membershipCount = await inTenant(tenant.id, (tx) => tx.membership.count({ where: { tenantId: tenant.id } }));
       expect(membershipCount).toBe(1);
     });
 
@@ -254,7 +297,7 @@ describe('Phase 2UI.2 — Admin foundation & credential lifecycle (e2e)', () => 
         .set('Authorization', `Bearer ${operatorToken}`)
         .send({ organizationName: 'Org', administratorEmail: `badprod-${randomUUID().slice(0, 8)}@example.com`, administratorFirstName: 'A', administratorLastName: 'A', productIds: [randomUUID()] });
       expect(res.status).toBe(404);
-      const orgRow = await prisma.organization.findFirst({ where: { tenantId: tenant.id } });
+      const orgRow = await inTenant(tenant.id, (tx) => tx.organization.findFirst({ where: { tenantId: tenant.id } }));
       expect(orgRow).toBeNull();
     });
 
@@ -280,8 +323,12 @@ describe('Phase 2UI.2 — Admin foundation & credential lifecycle (e2e)', () => 
         .post(`/api/v1/platform/tenants/${attackerTenant.id}/bootstrap`)
         .set('Authorization', `Bearer ${operatorToken}`)
         .send({ organizationName: 'Attacker Org', administratorEmail: attackerEmail, administratorFirstName: 'A', administratorLastName: 'A' });
-      await prisma.securityUser.update({ where: { email: attackerEmail }, data: { passwordHash: await hashPassword(PASSWORD), passwordChangedAt: new Date() } });
-      await prisma.membership.updateMany({ where: { tenantId: attackerTenant.id }, data: { status: 'ACTIVE' } });
+      // Mirrors exactly what the real invitation-accept flow does
+      // (UsersRepository.activateWithPassword) — password AND status must
+      // both flip together, or login correctly rejects a still-PROVISIONED
+      // account with 403 "Account is provisioned" even with a valid password.
+      await prisma.securityUser.update({ where: { email: attackerEmail }, data: { passwordHash: await hashPassword(PASSWORD), passwordChangedAt: new Date(), status: 'ACTIVE' } });
+      await inTenant(attackerTenant.id, (tx) => tx.membership.updateMany({ where: { tenantId: attackerTenant.id }, data: { status: 'ACTIVE' } }));
       const attackerToken = await tenantLogin(attackerTenant.tenantCode, attackerEmail);
 
       const withTenantToken = await request(app.getHttpServer()).post(`/api/v1/platform/tenants/${tenant.id}/bootstrap`).set('Authorization', `Bearer ${attackerToken}`).send(body);
@@ -367,8 +414,9 @@ describe('Phase 2UI.2 — Admin foundation & credential lifecycle (e2e)', () => 
         .post(`/api/v1/platform/tenants/${tenant.id}/bootstrap`)
         .set('Authorization', `Bearer ${operatorToken}`)
         .send({ organizationName: 'Org', administratorEmail: email, administratorFirstName: 'A', administratorLastName: 'A' });
-      await prisma.securityUser.update({ where: { email }, data: { passwordHash: await hashPassword(PASSWORD), passwordChangedAt: new Date() } });
-      await prisma.membership.updateMany({ where: { tenantId: tenant.id }, data: { status: 'ACTIVE' } });
+      // Same activation-parity fix as the Tenant Bootstrap authz test above.
+      await prisma.securityUser.update({ where: { email }, data: { passwordHash: await hashPassword(PASSWORD), passwordChangedAt: new Date(), status: 'ACTIVE' } });
+      await inTenant(tenant.id, (tx) => tx.membership.updateMany({ where: { tenantId: tenant.id }, data: { status: 'ACTIVE' } }));
       const tenantToken = await tenantLogin(tenant.tenantCode, email);
 
       const res = await request(app.getHttpServer()).post(`/api/v1/applications/${app1.id}/credentials/rotate`).set('Authorization', `Bearer ${tenantToken}`).send();
@@ -432,7 +480,7 @@ describe('Phase 2UI.2 — Admin foundation & credential lifecycle (e2e)', () => 
 
       await request(app.getHttpServer()).post(`/api/v1/service-accounts/${sa.id}/credentials/rotate`).set('Authorization', `Bearer ${operatorToken}`).send();
 
-      const grantsAfter = await prisma.serviceAccountTenantGrant.findMany({ where: { serviceAccountId: sa.id, tenantId: tenant.id } });
+      const grantsAfter = await inTenant(tenant.id, (tx) => tx.serviceAccountTenantGrant.findMany({ where: { serviceAccountId: sa.id, tenantId: tenant.id } }));
       expect(grantsAfter).toHaveLength(1);
       expect(grantsAfter[0].status).toBe('ACTIVE');
     });

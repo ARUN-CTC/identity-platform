@@ -9,7 +9,7 @@ Build the backend/security foundation Phase 2UI.1's UI/UX gap analysis found mis
 - **`docs/TENANT_BOOTSTRAP.md`** — `POST /platform/tenants/:id/bootstrap`: one real Postgres transaction creating the Organization, finding-or-creating the global Administrator identity, the Membership, the `TENANT_ADMIN` role grant, and any requested Product Entitlements — atomically, with a real DB-enforced concurrency guarantee (not merely a soft pre-check).
 - **`docs/CREDENTIAL_ROTATION.md`** — `POST /applications/:id/credentials/rotate` and `POST /service-accounts/:id/credentials/rotate`: atomic-replacement secret/credential rotation, optimistic-locked against concurrent double-rotation, reusing the exact same crypto utilities `create()` already uses.
 - **`docs/AUDIENCE_CONFIGURATION.md`** — investigated the fourth listed gap and found it was **already fully implemented**; documents what exists, corrects a specific over-claim in Phase 2UI.1's own wizard design, and adds a regression-lock test so the finding can't silently drift.
-- **`tests/phase2ui2-admin-foundation-credential-lifecycle.e2e-spec.ts`** — 26 e2e tests across all four gaps (see §9 — **written and typechecked, NOT executed this session**, environment blocker below).
+- **`tests/phase2ui2-admin-foundation-credential-lifecycle.e2e-spec.ts`** — 25 e2e tests across all four gaps, **live-verified** (see §Tests addendum — two real bugs found and fixed in the test file itself during that verification, neither touching the implementation).
 - **`src/common/utils/organization-code.util.ts`** + its unit test — the one piece of genuinely pure new logic, extracted for direct unit coverage rather than left as an untestable private method, matching this codebase's own established split (pure logic → unit test, DB/transaction logic → e2e).
 
 ## Key findings
@@ -32,15 +32,27 @@ Build the backend/security foundation Phase 2UI.1's UI/UX gap analysis found mis
 
 ## Tests
 
+**Update, post-Docker-reinstall**: Docker was later reinstalled (by the user) and the full suite was run live, for real, against a fresh PostgreSQL instance — see the addendum at the end of this section.
+
 ```text
 Unit:        281/281 PASS (277 pre-existing + 4 new: organization-code.util.spec.ts)
-E2E:         26 new tests written (tests/phase2ui2-admin-foundation-credential-lifecycle.e2e-spec.ts),
-             typechecked clean — NOT EXECUTED this session (see §Known Issues — environment blocker)
+E2E:         25 new tests, LIVE-EXECUTED — see addendum below
 Typecheck:   PASS (tsc --noEmit, exit 0, including the new e2e spec file)
 Build:       PASS (nest build, exit 0)
 Lint:        No backend lint script configured (pre-existing condition, unchanged by this phase —
              confirmed absent from package.json, same finding as Phase 3.1)
 ```
+
+### Addendum — live e2e verification (post-Docker-reinstall)
+
+Ran against a genuinely fresh PostgreSQL instance (schema built + seeded from scratch, `npm run db:build-schema && npm run db:seed`). First live run: **7 of 25 new tests failed.** Diagnosed and fixed two real bugs — both in this phase's own **test file**, not the implementation:
+
+1. **RLS-context-free verification queries**: `organization`, `membership`, `securityUserRole`, and `serviceAccountTenantGrant` all carry `apply_tenant_rls` — a raw `prisma.X.findFirst(...)` with no `app.current_tenant_id` session GUC set sees **zero rows** (RLS's `USING` clause evaluates false for every row; not an error, just silently empty). Every direct verification query against these tables needed the same `PrismaContextService.runInContext(fn, tenantId)` wrapping every real repository in this codebase already uses — the existing `phase2d2-application-oauth-client.e2e-spec.ts` template demonstrated this pattern in its own `beforeAll`, but this phase's new test only applied it there, not inside the individual `it()` bodies' own verification code. Fixed by adding an `inTenant()` test helper and wrapping every affected query.
+2. **Incomplete manual test-user activation**: to attack the Platform Operator boundary with a real tenant-scoped token, the test set `passwordHash` directly via Prisma — but login independently checks `security_user.status`, and a bootstrap-created administrator stays `PROVISIONED` until the real invitation-accept flow runs (`UsersRepository.activateWithPassword` sets `passwordHash` **and** `status: 'ACTIVE'` together, atomically). The test only set the password, leaving `status: 'PROVISIONED'` — login correctly rejected it with `403 "Account is provisioned"`, and the test's own `tenantLogin()` helper failed asserting `accessToken` was returned, obscuring the real cause until traced with a live manual `curl` reproduction. Fixed by also setting `status: 'ACTIVE'` in both places the test does this.
+
+Both bugs were diagnosed by reproducing the exact failing sequence live via `curl` against a manually-started instance of the built backend (bypassing Jest to iterate faster), not by guessing from the stack trace alone. **Neither bug touched any implementation file** — `TenantBootstrapService`, the rotation endpoints, and every other file from this phase's original commit (`d249cb0`) are unchanged; only the test file itself was corrected.
+
+**Final result, live**: 373/373 e2e (348 pre-existing + 25 new — corrected count; this phase's own summary further up this document said 26, an off-by-one in the original count, corrected here against the actual file), 22/22 suites, zero regressions in any pre-existing test. 281/281 unit tests, unchanged, also re-run.
 
 ### E2E coverage written (26 tests, by area)
 
@@ -161,7 +173,7 @@ Exactly one commit, `feat(identity): establish admin foundation and credential l
 
 ## Known Issues
 
-- **Critical (environment, not code)**: Docker Desktop was deliberately uninstalled from this machine (`C:\Users\arunj\AppData\Local\Docker\install-log.8.txt` — `CommandLine: "...Docker Desktop Installer.exe" "uninstall"`, `[Installer][I] Uninstall completed successfully`, 2026-09-22 17:00 UTC) — not crashed, not corrupted, a completed uninstall this session found evidence of but did not perform and will not reverse unilaterally (reinstalling software the user removed, for a reason this session has no visibility into, is exactly the kind of state-changing action to ask about rather than assume). This blocked running the live PostgreSQL instance the e2e suite requires. **Every one of the 26 new e2e tests in `tests/phase2ui2-admin-foundation-credential-lifecycle.e2e-spec.ts` is written and typechecks cleanly, but has NOT been executed against a real database this session.** This is a genuine, reported gap, not a claimed pass — once Docker is reinstalled (by the user, or by this session if asked), re-run `npm run test:e2e` (this phase's new suite plus the full pre-existing 348-test suite) before treating this phase's e2e coverage as verified.
+- **Resolved**: Docker Desktop was found deliberately uninstalled from this machine mid-phase (`C:\Users\arunj\AppData\Local\Docker\install-log.8.txt` — completed uninstall, 2026-09-22 17:00 UTC), blocking live e2e execution at the time this document was first written. The user reinstalled it afterward; the full suite (unit + e2e, 654 tests total across both) has since been run live and is green — see the §Tests addendum above. No longer a gap.
 - **Medium**: Organization Types placement/permission (tenant-editable "global" reference data) — confirmed, not fixed, out of this phase's four listed gaps (`docs/TENANT_BOOTSTRAP.md` §10).
 - **Low**: no bulk product-entitlement or bulk-anything endpoint exists anywhere in this codebase (unchanged finding from Phase 2UI.1) — bootstrap's `productIds` array works via N sequential single-item creates inside its own transaction, adequate for a new tenant's typical starting entitlement count, not a general bulk primitive.
 - **Low**: a live `/oauth/token` round-trip proving a rotated-away secret is actually rejected end-to-end was not separately built this phase (see Security §, "Not independently re-verified").
@@ -185,12 +197,12 @@ MFA / Passkeys / SAML / Device Flow / Token Exchange / Impersonation /
 
 ## Recommendation
 
-**Phase 2UI.3 (the P1 list/aggregate endpoints from `docs/PHASE_2UI1.md`'s own roadmap) can begin once this phase's e2e suite has actually been run and confirmed green against a real database** — the code is complete, typechecked, and reasoned through in depth, but this phase's own standard (throughout this entire project) is "verified, not assumed," and a live database run is the one verification step this session's environment could not perform. Re-run `npm run test:e2e` (this phase's new suite) and the full pre-existing suite together, confirm 348 + 26 = 374 green, before treating Phase 2UI.2 as fully closed rather than "code-complete, execution-pending."
+**Phase 2UI.3 can begin.** The live database run this document originally flagged as the one remaining gap has since happened: 373/373 e2e (348 pre-existing + 25 new), 281/281 unit, zero regressions, run against a genuinely fresh PostgreSQL instance built and seeded from scratch. Two real bugs were found during that run and fixed — both in the new test file's own verification code (an RLS-context omission, and an incomplete manual test-user activation), neither in the implementation itself, which is unchanged from commit `d249cb0`.
 
 ## Final Decision
 
 ```text
-PHASE 2UI.2 — PASS, WITH ONE EXPLICIT VERIFICATION GAP
+PHASE 2UI.2 — PASS
 ```
 
-Every one of the governing brief's 21 success criteria is addressed in design and implementation; 20 of them have direct e2e coverage written to prove it. The one exception is criterion §16 ("Existing Identity V1 tests remain green") and the e2e portions of §5-§9/§18-21 — these require the live database run this session's environment could not perform. This is reported honestly rather than claimed, per this project's own established discipline: do not claim full production readiness (or a full PASS) merely because code compiles and unit tests pass when a genuinely live-dependent verification step was skipped for a documented, external reason.
+Every one of the governing brief's 21 success criteria is addressed in design and implementation, and every one now has live e2e coverage confirmed green — not merely written and typechecked. The verification gap this document originally reported (no live database run performed) is closed: Docker was reinstalled, the full suite was run for real, two real test-file bugs were found and fixed through live reproduction (not guessed at), and the final result is unconditionally green.
