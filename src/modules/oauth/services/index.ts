@@ -4,3 +4,4 @@ export * from './client-credentials.service';
 export * from './authorize.service';
 export * from './authorization-code-grant.service';
 export * from './id-token.service';
+export * from './pending-authorizations.service';

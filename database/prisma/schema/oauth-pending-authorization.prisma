@@ -1,0 +1,42 @@
+// Phase 2UI.5A (docs/OAUTH_BROWSER_SESSION_ARCHITECTURE.md §7). Remembers a
+// validated GET /oauth/authorize request across the "redirect to login, log
+// in, redirect back" round trip for a browser with no existing session —
+// the resume mechanism brief §8/§9 requires. Deliberately NOT a
+// user/identity table: created before any user is authenticated, so it
+// stores only OAuth request parameters, never a user/session reference —
+// resuming it always authorizes whoever is CURRENTLY authenticated at
+// resume time (see the architecture doc's own §15 note on why this is
+// correct, not a gap). No tenantId, no RLS — the same treatment this
+// platform already gives other genuinely tenant-less, pre-authentication
+// state.
+model OAuthPendingAuthorization {
+  id            String @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  // SHA-256 hash of the opaque reference value handed to the browser via
+  // the login redirect — same hash-only-storage convention as every other
+  // bearer-ish secret this platform issues (refresh/reset/invitation/
+  // authorization-code tokens). The plain value is never persisted.
+  referenceHash String @unique @map("reference_hash")
+
+  responseType         String? @map("response_type")
+  clientId             String? @map("client_id")
+  redirectUri          String  @map("redirect_uri")
+  scope                String?
+  state                String?
+  codeChallenge        String? @map("code_challenge")
+  codeChallengeMethod  String? @map("code_challenge_method")
+  audience             String?
+  // The ORIGINAL request's own organization hint, if any — never trusted
+  // as authoritative merely for being stored; AuthorizeService
+  // independently revalidates it live against the resuming caller's own
+  // Membership, unchanged, exactly as it already does for a live request
+  // parameter.
+  organizationId       String? @map("organization_id") @db.Uuid
+  nonce                String?
+
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz
+
+  @@index([expiresAt], map: "idx_oauth_pending_authorization_expires_at")
+  @@map("oauth_pending_authorization")
+}

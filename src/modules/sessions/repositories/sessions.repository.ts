@@ -93,4 +93,40 @@ export class SessionsRepository {
       tenantId,
     );
   }
+
+  /**
+   * Phase 2UI.5A (docs/OAUTH_BROWSER_SESSION_ARCHITECTURE.md) — (re)issues
+   * the browser-session cookie secret for this session. Called from every
+   * path that already touches a session's tokens (login, refresh, both
+   * branches of organization-context switch) so the cookie's lifecycle
+   * never drifts from the tokens it accompanies.
+   */
+  async setBrowserSessionSecret(tenantId: string, id: string, secretHash: string, expiresAt: Date): Promise<void> {
+    await this.prismaContext.runInContext(
+      (tx) =>
+        tx.securitySession.updateMany({
+          where: { id, tenantId },
+          data: { browserSessionSecretHash: secretHash, browserSessionSecretExpiresAt: expiresAt },
+        }),
+      tenantId,
+    );
+  }
+
+  /**
+   * The one lookup that genuinely cannot take tenantId as an ambient given
+   * — a browser presenting only the cookie hasn't told us which tenant it
+   * belongs to yet. Safe without an RLS change because the caller (see
+   * OAuthBrowserSessionGuard) has already parsed tenantId out of the
+   * cookie's own self-identifying value before calling this — this is a
+   * normal, tenant-scoped, RLS-respecting query, not a bypass.
+   */
+  async findByBrowserSessionSecretHash(tenantId: string, secretHash: string): Promise<SecuritySession | null> {
+    return this.prismaContext.runInContext(
+      (tx) =>
+        tx.securitySession.findFirst({
+          where: { tenantId, browserSessionSecretHash: secretHash, browserSessionSecretExpiresAt: { gt: new Date() }, revokedAt: null },
+        }),
+      tenantId,
+    );
+  }
 }

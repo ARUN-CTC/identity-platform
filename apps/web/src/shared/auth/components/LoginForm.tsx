@@ -20,7 +20,7 @@ import { getAuthErrorMessage } from "@/shared/auth/authErrorMessages";
 import { emptyLoginFormValues, loginFormSchema, type LoginFormValues } from "@/app/pages/loginFormSchema";
 
 export interface LoginFormProps {
-  /** Defaults to "Welcome back" — overridden by the OAuth authorization shell to show product context instead (brief §7). */
+  /** Defaults to "Welcome back" — overridden by LoginPage to show OAuth product context instead when resuming a pending authorization (see docs/OAUTH_BROWSER_SESSION_ARCHITECTURE.md). */
   title?: string;
   subtitle?: string;
   /** Called with the freshly-established session state right after a successful sign-in — never called on failure. The form does not navigate itself; the caller decides where to go (brief §12's org-selection routing lives in the caller, not here, since only the caller knows the eventual destination). */
@@ -28,11 +28,11 @@ export interface LoginFormProps {
 }
 
 /**
- * The one login form — used standalone by LoginPage and inline by
- * OAuthAuthorizePage's "please sign in to continue" step (brief §22 names
- * this component explicitly). Extracted from LoginPage unchanged in
- * behavior; LoginPage.tsx is now a thin wrapper providing the post-login
- * navigation decision.
+ * The one login form — used by LoginPage, which is now also the entry
+ * point for resuming a pending OAuth authorization request (see
+ * docs/OAUTH_BROWSER_SESSION_ARCHITECTURE.md) via its `authorize_request`
+ * query param. Extracted from LoginPage unchanged in behavior; LoginPage.tsx
+ * is now a thin wrapper providing the post-login navigation decision.
  */
 export function LoginForm({ title = "Welcome back", subtitle = "Sign in to your workspace to continue", onSuccess }: LoginFormProps) {
   const { login } = useAuth();

@@ -227,4 +227,51 @@ export class TokenService {
   parseAuthorizationCode(plain: string): { tenantId: string; secret: string } | null {
     return this.parseRefreshToken(plain);
   }
+
+  /**
+   * Phase 2UI.5A (docs/OAUTH_BROWSER_SESSION_ARCHITECTURE.md §3) — the
+   * browser-session cookie's own secret. Reuses the exact same opaque,
+   * tenant-prefixed, hash-only design as every other bearer-ish secret
+   * above (this is what lets the new guard look it up via a normal,
+   * tenant-scoped, RLS-respecting query — no RLS policy change needed,
+   * since the tenant is parsed out of the value itself before the
+   * database is ever touched). Deliberately a distinct method name, not
+   * an alias reused directly for the access/refresh token: this
+   * credential's own lifecycle (§4/§14 there) is conceptually and
+   * auditably separate even though the underlying shape is identical.
+   */
+  generateBrowserSessionSecret(tenantId: string): { plain: string; hash: string } {
+    return this.generateRefreshToken(tenantId);
+  }
+
+  hashBrowserSessionSecret(secret: string): string {
+    return this.hashRefreshToken(secret);
+  }
+
+  parseBrowserSessionSecret(plain: string): { tenantId: string; secret: string } | null {
+    return this.parseRefreshToken(plain);
+  }
+
+  /** Mirrors refreshTokenTtlSecondsFor() — the cookie's usefulness cannot outlive the session it identifies. */
+  browserSessionSecretTtlSecondsFor(rememberMe: boolean): number {
+    return this.refreshTokenTtlSecondsFor(rememberMe);
+  }
+
+  /**
+   * Phase 2UI.5A — how long a pending (not-yet-authenticated) authorization
+   * request survives the "redirect to login, log in, redirect back" round
+   * trip. Deliberately much longer than the 60s authorization-code TTL
+   * above (a human needs time to type credentials), and deliberately its
+   * own env var, never conflated with any other TTL in this file.
+   */
+  get pendingAuthorizationTtlSeconds(): number {
+    const configured = this.config.get<string>('OAUTH_PENDING_AUTHORIZATION_TTL_SECONDS');
+    return configured ? Number(configured) : 600;
+  }
+
+  /** Reuses the exact same opaque, hash-only design — no tenant prefix needed: the table it's looked up in has no RLS at all (see the architecture doc §7). */
+  generatePendingAuthorizationReference(): { plain: string; hash: string } {
+    const plain = randomBytes(32).toString('base64url');
+    return { plain, hash: this.hashRefreshToken(plain) };
+  }
 }

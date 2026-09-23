@@ -8,7 +8,7 @@ import ChooseOrganizationPage from "@/app/pages/ChooseOrganizationPage";
 import ForbiddenPage from "@/app/pages/ForbiddenPage";
 import ForgotPasswordPage from "@/app/pages/ForgotPasswordPage";
 import LoginPage from "@/app/pages/LoginPage";
-import OAuthAuthorizePage from "@/app/pages/oauth/OAuthAuthorizePage";
+import OAuthAuthorizeExpiredPage from "@/app/pages/oauth/OAuthAuthorizeExpiredPage";
 import ResetPasswordPage from "@/app/pages/ResetPasswordPage";
 import NotFoundPage from "@/app/pages/NotFoundPage";
 import ServerErrorPage from "@/app/pages/ServerErrorPage";
@@ -51,7 +51,7 @@ export const router = createBrowserRouter([
       { path: "/forgot-password", element: <ForgotPasswordPage /> },
       { path: "/reset-password", element: <ResetPasswordPage /> },
       { path: "/accept-invitation", element: <AcceptInvitationPage /> },
-      { path: "/oauth/authorize", element: <OAuthAuthorizePage /> },
+      { path: "/oauth/authorize/expired", element: <OAuthAuthorizeExpiredPage /> },
       { path: "/403", element: <ForbiddenPage /> },
       { path: "/500", element: <ServerErrorPage /> },
     ],

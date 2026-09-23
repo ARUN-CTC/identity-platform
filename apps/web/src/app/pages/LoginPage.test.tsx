@@ -117,6 +117,51 @@ describe("LoginPage", () => {
     expect(screen.queryByText("Dashboard page")).not.toBeInTheDocument();
   });
 
+  it("resumes a pending OAuth authorization via a real top-level navigation, when authorize_request is present and there's no organization ambiguity", async () => {
+    const user = userEvent.setup();
+    vi.mocked(getCurrentUser).mockResolvedValue({ ...BASE_ME, organizationContext: { organizationId: null, organizationName: null } });
+    vi.mocked(listMyOrganizations).mockResolvedValue([]);
+
+    const originalLocation = window.location;
+    const assignedHrefs: string[] = [];
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: {
+        ...originalLocation,
+        set href(value: string) {
+          assignedHrefs.push(value);
+        },
+      },
+    });
+
+    try {
+      renderPage(["/login?authorize_request=ref-abc123"]);
+      await submitLogin(user);
+
+      await vi.waitFor(() => expect(assignedHrefs).toHaveLength(1));
+      const url = new URL(assignedHrefs[0]);
+      expect(url.pathname).toBe("/api/v1/oauth/authorize/resume");
+      expect(url.searchParams.get("ref")).toBe("ref-abc123");
+      // Never an in-app navigation for this case.
+      expect(screen.queryByText("Dashboard page")).not.toBeInTheDocument();
+    } finally {
+      Object.defineProperty(window, "location", { configurable: true, value: originalLocation });
+    }
+  });
+
+  it("carries authorize_request through to the organization picker instead of resuming immediately, when a choice is still needed", async () => {
+    const user = userEvent.setup();
+    vi.mocked(getCurrentUser).mockResolvedValue({ ...BASE_ME, organizationContext: { organizationId: null, organizationName: null } });
+    vi.mocked(listMyOrganizations).mockResolvedValue([
+      { organizationId: "org-1", organizationName: "Org One", organizationStatus: "ACTIVE", tenantId: "t1", tenantCode: "ACME", tenantName: "Acme", tenantStatus: "ACTIVE", membershipStatus: "ACTIVE" },
+      { organizationId: "org-2", organizationName: "Org Two", organizationStatus: "ACTIVE", tenantId: "t1", tenantCode: "ACME", tenantName: "Acme", tenantStatus: "ACTIVE", membershipStatus: "ACTIVE" },
+    ]);
+    renderPage(["/login?authorize_request=ref-abc123"]);
+
+    await submitLogin(user);
+    expect(await screen.findByText("Choose organization page")).toBeInTheDocument();
+  });
+
   it("redirects back to the originally-requested page after a successful login with no organization ambiguity", async () => {
     const user = userEvent.setup();
     vi.mocked(getCurrentUser).mockResolvedValue({ ...BASE_ME, organizationContext: { organizationId: null, organizationName: null } });

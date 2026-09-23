@@ -151,7 +151,13 @@ CREATE TABLE security_session (
     revoked_at TIMESTAMPTZ,
     revoked_reason VARCHAR(100),
 
-    remember_me BOOLEAN NOT NULL DEFAULT FALSE
+    remember_me BOOLEAN NOT NULL DEFAULT FALSE,
+
+    -- Phase 2UI.5A (docs/OAUTH_BROWSER_SESSION_ARCHITECTURE.md) — opaque,
+    -- hash-only browser-session secret; see that document for why this is
+    -- deliberately not the access/refresh token itself.
+    browser_session_secret_hash TEXT,
+    browser_session_secret_expires_at TIMESTAMPTZ
 );
 CREATE INDEX idx_security_session_tenant ON security_session(tenant_id);
 CREATE INDEX idx_security_session_user ON security_session(user_id);

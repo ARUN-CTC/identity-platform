@@ -35,13 +35,17 @@ const FORBIDDEN_AUDIENCE_VALUES = new Set(['*', 'all', 'any']);
 
 /**
  * Phase 2D.7 (docs/OAUTH_AUTHORIZATION_CODE_PKCE.md) — `GET /oauth/authorize`
- * business logic. Runs BEHIND the platform's existing, global `JwtAuthGuard`
- * (this controller is deliberately never `@Public()`) — by the time this
- * service is called, `RequestContextService` already carries a
- * cryptographically verified, session-revocation-checked human identity
- * (tenantId/userId/organizationId). No new login mechanism is built here
- * (brief §19) — an unauthenticated request never reaches this class at all;
- * JwtAuthGuard rejects it first with the platform's own standard 401.
+ * business logic. `handle()` below is UNCHANGED since Phase 2D.7 and still
+ * requires an already-authenticated `RequestContextService`
+ * (tenantId/userId/organizationId) — it is never called until the caller
+ * is known.
+ *
+ * Phase 2UI.5A (docs/OAUTH_BROWSER_SESSION_ARCHITECTURE.md) changed WHO can
+ * reach this class and HOW authentication is resolved before `handle()`
+ * runs (the controller now accepts an unauthenticated hit and, via
+ * `validateClientAndRedirect` below, decides whether to redirect to login
+ * or continue) — it did not change `handle()` itself, its validation
+ * order, or any denial/audit behavior it already had.
  *
  * Validation order is the single most security-critical property of this
  * class (brief §9/§26): `client_id` and `redirect_uri` are validated FIRST,
@@ -253,6 +257,45 @@ export class AuthorizeService {
     this.metrics.increment(IdentityMetricNames.OAUTH_AUTHORIZATION_CODE_ISSUED);
 
     return { kind: 'issued', redirectUri, code: plain, state: request.state };
+  }
+
+  /**
+   * Phase 2UI.5A (docs/OAUTH_BROWSER_SESSION_ARCHITECTURE.md §8) — the SAME
+   * client_id + redirect_uri check `handle()`'s own steps 1-3 already make
+   * (same `OAuthApplicationPolicyService.checkEligibility()` call, same
+   * error mapping), callable BEFORE any authenticated context exists —
+   * `handle()` itself still requires one and is completely unchanged.
+   * `AuthorizeController` calls this first, unauthenticated-safe, to decide
+   * whether an invalid request gets today's unchanged direct-JSON error or
+   * (once client_id/redirect_uri are confirmed valid) whether an
+   * unauthenticated caller gets redirected to login rather than a bare 401.
+   *
+   * Deliberately does NOT call `auditDenied()` — there is no tenant to
+   * audit against yet at this point (no session exists). The identical
+   * check runs again, fully audited, inside `handle()` once the caller is
+   * authenticated — every authenticated attempt against an invalid client
+   * is still recorded exactly as before; only a wholly anonymous,
+   * unauthenticated bad request is not, a deliberate, minor, documented
+   * scope decision (docs/PHASE_2UI5A.md), not an oversight.
+   */
+  async validateClientAndRedirect(clientId: string | undefined, redirectUri: string | undefined) {
+    if (!clientId) {
+      throw new OAuthTokenError('invalid_request', 'client_id is required');
+    }
+    if (!redirectUri) {
+      throw new OAuthTokenError('invalid_request', 'redirect_uri is required');
+    }
+    try {
+      return await this.oauthPolicy.checkEligibility({ clientId, grantType: 'authorization_code', redirectUri });
+    } catch (error) {
+      if (error instanceof OAuthEligibilityError) {
+        if (error.reason === 'redirect_uri_not_allowed') {
+          throw new OAuthTokenError('invalid_request', 'redirect_uri does not exactly match a registered value');
+        }
+        throw new OAuthTokenError('unauthorized_client', 'This client is not authorized to use the authorization_code grant');
+      }
+      throw error;
+    }
   }
 
   /**

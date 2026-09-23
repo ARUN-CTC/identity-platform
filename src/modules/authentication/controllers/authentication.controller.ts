@@ -1,6 +1,7 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Request } from 'express';
+import { CookieOptions, Request, Response } from 'express';
 import {
   AUTH_LOGIN_POLICY_NAME,
   PASSWORD_RESET_POLICY_NAME,
@@ -18,13 +19,23 @@ import { RefreshTokenDto } from '../dto/refresh-token.dto';
 import { ResetPasswordDto } from '../dto/reset-password.dto';
 import { SwitchOrganizationContextDto } from '../dto/switch-organization-context.dto';
 import { MeEntity } from '../entities/me.entity';
-import { AuthenticationService } from '../services/authentication.service';
+import { AuthenticationService, AuthTokens, AuthTokensWithCookie } from '../services/authentication.service';
+
+const BROWSER_SESSION_COOKIE_NAME = 'identity_browser_session';
 
 /**
  * Phase 1 extracted source — copied from TravelOS, classified REFACTOR
  * REQUIRED: the organization-context endpoint was dropped (see
  * AuthenticationService's own header comment); invitation endpoints live on
  * their own InvitationsController (users/invitations) instead of here.
+ *
+ * Phase 2UI.5A (docs/OAUTH_BROWSER_SESSION_ARCHITECTURE.md) — login/
+ * refresh/context-switch now also set the new browser-session cookie as a
+ * side effect (`setBrowserSessionCookie` below), and logout clears it. The
+ * JSON response body every existing caller already expects is completely
+ * unchanged — `stripCookie` strips `browserSessionCookie` back off before
+ * returning, since `AuthTokensWithCookie` is an internal service-layer
+ * return shape, never the public response contract.
  */
 @ApiTags('authentication')
 @SkipTenantStatusCheck()
@@ -33,7 +44,21 @@ export class AuthenticationController {
   constructor(
     private readonly authenticationService: AuthenticationService,
     private readonly context: RequestContextService,
+    private readonly config: ConfigService,
   ) {}
+
+  private setBrowserSessionCookie(res: Response, tokens: AuthTokensWithCookie): AuthTokens {
+    const { browserSessionCookie, ...rest } = tokens;
+    const options: CookieOptions = {
+      httpOnly: true,
+      secure: this.config.get<string>('APP_ENV') === 'production',
+      sameSite: 'lax',
+      path: '/api/v1/oauth',
+      maxAge: browserSessionCookie.maxAgeSeconds * 1000,
+    };
+    res.cookie(BROWSER_SESSION_COOKIE_NAME, browserSessionCookie.value, options);
+    return rest;
+  }
 
   @Public()
   @UseGuards(RateLimitGuard)
@@ -41,20 +66,22 @@ export class AuthenticationController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Authenticate with tenantCode + email + password' })
-  login(@Body() dto: LoginDto, @Req() req: Request) {
+  async login(@Body() dto: LoginDto, @Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<AuthTokens> {
     const userAgent = req.headers['user-agent'];
-    return this.authenticationService.login(dto, {
+    const tokens = await this.authenticationService.login(dto, {
       ipAddress: req.ip,
       userAgent: Array.isArray(userAgent) ? userAgent[0] : userAgent,
     });
+    return this.setBrowserSessionCookie(res, tokens);
   }
 
   @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Rotate a refresh token for a new access/refresh token pair' })
-  refresh(@Body() dto: RefreshTokenDto) {
-    return this.authenticationService.refresh(dto.refreshToken);
+  async refresh(@Body() dto: RefreshTokenDto, @Res({ passthrough: true }) res: Response): Promise<AuthTokens> {
+    const tokens = await this.authenticationService.refresh(dto.refreshToken);
+    return this.setBrowserSessionCookie(res, tokens);
   }
 
   @Get('me')
@@ -82,13 +109,14 @@ export class AuthenticationController {
       'fresh access/refresh token pair (same shape as login/refresh) reflecting the new context; the old refresh ' +
       'token is invalidated.',
   })
-  switchContext(@Body() dto: SwitchOrganizationContextDto) {
-    return this.authenticationService.switchOrganizationContext(
+  async switchContext(@Body() dto: SwitchOrganizationContextDto, @Res({ passthrough: true }) res: Response): Promise<AuthTokens> {
+    const tokens = await this.authenticationService.switchOrganizationContext(
       this.context.requireTenantId(),
       this.context.userId!,
       this.context.sessionId!,
       dto.organizationId,
     );
+    return this.setBrowserSessionCookie(res, tokens);
   }
 
   @Post('context/clear')
@@ -97,20 +125,22 @@ export class AuthenticationController {
     summary: 'Return to tenant-wide context (no organization selected)',
     description: 'Returns a fresh access/refresh token pair with no organizationId claim.',
   })
-  clearContext() {
-    return this.authenticationService.clearOrganizationContext(
+  async clearContext(@Res({ passthrough: true }) res: Response): Promise<AuthTokens> {
+    const tokens = await this.authenticationService.clearOrganizationContext(
       this.context.requireTenantId(),
       this.context.userId!,
       this.context.sessionId!,
     );
+    return this.setBrowserSessionCookie(res, tokens);
   }
 
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Revoke the caller's current session" })
   @ResponseMessage('Logged out successfully')
-  async logout() {
+  async logout(@Res({ passthrough: true }) res: Response) {
     await this.authenticationService.logout(this.context.requireTenantId(), this.context.sessionId!);
+    res.clearCookie(BROWSER_SESSION_COOKIE_NAME, { path: '/api/v1/oauth' });
     return null;
   }
 

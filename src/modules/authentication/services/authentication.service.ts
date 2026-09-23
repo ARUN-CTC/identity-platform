@@ -34,6 +34,23 @@ export interface AuthTokens {
   expiresIn: number;
 }
 
+/**
+ * Phase 2UI.5A (docs/OAUTH_BROWSER_SESSION_ARCHITECTURE.md §5) — carries
+ * the browser-session cookie secret alongside the existing `AuthTokens`
+ * shape WITHOUT changing that shape: `AuthenticationController` reads
+ * `browserSessionCookie` to call `res.cookie(...)`, then returns only the
+ * `AuthTokens` fields as the JSON body — the response body every existing
+ * frontend caller already expects is completely unchanged.
+ */
+export interface BrowserSessionCookie {
+  value: string;
+  maxAgeSeconds: number;
+}
+
+export interface AuthTokensWithCookie extends AuthTokens {
+  browserSessionCookie: BrowserSessionCookie;
+}
+
 interface LoginContext {
   ipAddress?: string;
   userAgent?: string;
@@ -75,7 +92,7 @@ export class AuthenticationService {
     private readonly config: ConfigService,
   ) {}
 
-  async login(dto: LoginDto, ctx: LoginContext): Promise<AuthTokens> {
+  async login(dto: LoginDto, ctx: LoginContext): Promise<AuthTokensWithCookie> {
     const tenant = await this.tenantsService.findByCode(dto.tenantCode).catch(() => null);
     if (!tenant) {
       throw INVALID_CREDENTIALS();
@@ -182,7 +199,7 @@ export class AuthenticationService {
    * it (theft). Either way the safe response is the same: treat it as
    * compromise and revoke the entire session, forcing re-login.
    */
-  async refresh(plainToken: string): Promise<AuthTokens> {
+  async refresh(plainToken: string): Promise<AuthTokensWithCookie> {
     const parsed = this.tokenService.parseRefreshToken(plainToken);
     if (!parsed) {
       throw new AppException('IAM_REFRESH_TOKEN_INVALID', 'Invalid refresh token', HttpStatus.UNAUTHORIZED);
@@ -280,11 +297,14 @@ export class AuthenticationService {
       organizationId,
     });
 
+    const browserSessionCookie = await this.issueBrowserSessionCookie(parsed.tenantId, existing.sessionId, session?.rememberMe ?? false);
+
     return {
       accessToken,
       refreshToken: next.plain,
       tokenType: 'Bearer',
       expiresIn: this.tokenService.accessTokenTtlSeconds,
+      browserSessionCookie,
     };
   }
 
@@ -400,7 +420,7 @@ export class AuthenticationService {
     userId: string,
     sessionId: string,
     targetOrganizationId: string,
-  ): Promise<AuthTokens> {
+  ): Promise<AuthTokensWithCookie> {
     // Awaited (not fire-and-forget) so a failure to audit surfaces as a 500
     // rather than silently losing the audit trail — but this is the only
     // extra write before the 403 the caller sees.
@@ -440,7 +460,7 @@ export class AuthenticationService {
     // (docs/ORGANIZATION_CONTEXT_SECURITY.md §4). `newSessionId` lets the
     // cross-tenant branch attribute the event to the session it actually
     // switched INTO, not the one it revoked.
-    let result: AuthTokens;
+    let result: AuthTokensWithCookie;
     let newSessionId: string;
 
     if (isCrossTenant) {
@@ -465,7 +485,14 @@ export class AuthenticationService {
         email: user.email,
         organizationId: targetOrganizationId,
       });
-      result = { accessToken, refreshToken: refresh.plain, tokenType: 'Bearer', expiresIn: this.tokenService.accessTokenTtlSeconds };
+      const browserSessionCookie = await this.issueBrowserSessionCookie(currentTenantId, sessionId, false);
+      result = {
+        accessToken,
+        refreshToken: refresh.plain,
+        tokenType: 'Bearer',
+        expiresIn: this.tokenService.accessTokenTtlSeconds,
+        browserSessionCookie,
+      };
       newSessionId = sessionId;
     }
 
@@ -485,7 +512,7 @@ export class AuthenticationService {
    * Returns to tenant-wide context — always same-tenant (there is no tenant
    * to move to), so this only ever mutates the existing session in place.
    */
-  async clearOrganizationContext(tenantId: string, userId: string, sessionId: string): Promise<AuthTokens> {
+  async clearOrganizationContext(tenantId: string, userId: string, sessionId: string): Promise<AuthTokensWithCookie> {
     const user = await this.usersService.findOne(userId);
 
     await this.sessionsRepository.updateOrganization(tenantId, sessionId, null);
@@ -501,7 +528,14 @@ export class AuthenticationService {
       email: user.email,
       organizationId: null,
     });
-    const result: AuthTokens = { accessToken, refreshToken: refresh.plain, tokenType: 'Bearer', expiresIn: this.tokenService.accessTokenTtlSeconds };
+    const browserSessionCookie = await this.issueBrowserSessionCookie(tenantId, sessionId, false);
+    const result: AuthTokensWithCookie = {
+      accessToken,
+      refreshToken: refresh.plain,
+      tokenType: 'Bearer',
+      expiresIn: this.tokenService.accessTokenTtlSeconds,
+      browserSessionCookie,
+    };
 
     // STABILIZATION FIX: recorded only after token issuance actually
     // completes — see the identical fix/rationale in switchOrganizationContext().
@@ -652,7 +686,7 @@ export class AuthenticationService {
     ipAddress: string | undefined,
     rememberMe = false,
     organizationId?: string | null,
-  ): Promise<AuthTokens> {
+  ): Promise<AuthTokensWithCookie> {
     const { tokens } = await this.issueTokensWithSessionId(tenantId, userId, email, deviceInfo, ipAddress, rememberMe, organizationId);
     return tokens;
   }
@@ -673,7 +707,7 @@ export class AuthenticationService {
     ipAddress: string | undefined,
     rememberMe = false,
     organizationId?: string | null,
-  ): Promise<{ tokens: AuthTokens; sessionId: string }> {
+  ): Promise<{ tokens: AuthTokensWithCookie; sessionId: string }> {
     const refreshTtlMs = this.tokenService.refreshTokenTtlSecondsFor(rememberMe) * 1000;
     const session = await this.sessionsRepository.create(
       tenantId,
@@ -696,14 +730,31 @@ export class AuthenticationService {
       organizationId: organizationId ?? undefined,
     });
 
+    const browserSessionCookie = await this.issueBrowserSessionCookie(tenantId, session.id, rememberMe);
+
     return {
       tokens: {
         accessToken,
         refreshToken: refresh.plain,
         tokenType: 'Bearer',
         expiresIn: this.tokenService.accessTokenTtlSeconds,
+        browserSessionCookie,
       },
       sessionId: session.id,
     };
+  }
+
+  /**
+   * Phase 2UI.5A (docs/OAUTH_BROWSER_SESSION_ARCHITECTURE.md §5) — called
+   * from every path that already (re)issues tokens for a session (login,
+   * refresh, both branches of organization-context switch) so the cookie's
+   * lifecycle never drifts from the tokens it accompanies.
+   */
+  private async issueBrowserSessionCookie(tenantId: string, sessionId: string, rememberMe: boolean): Promise<BrowserSessionCookie> {
+    const { plain, hash } = this.tokenService.generateBrowserSessionSecret(tenantId);
+    const maxAgeSeconds = this.tokenService.browserSessionSecretTtlSecondsFor(rememberMe);
+    const expiresAt = new Date(Date.now() + maxAgeSeconds * 1000);
+    await this.sessionsRepository.setBrowserSessionSecret(tenantId, sessionId, hash, expiresAt);
+    return { value: plain, maxAgeSeconds };
   }
 }

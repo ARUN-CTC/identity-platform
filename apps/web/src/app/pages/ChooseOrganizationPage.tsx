@@ -16,11 +16,14 @@ import { useLocation, useNavigate, type Location } from "react-router-dom";
 import { useAuth } from "@/app/providers/AuthProvider";
 import { LoadingState } from "@/design-system/components/LoadingState";
 import { getAuthErrorMessage } from "@/shared/auth/authErrorMessages";
+import { buildAuthorizeResumeUrl } from "@/shared/auth/oauthResume";
 
 interface NavState {
   from?: Location | string;
   /** Set by LoginPage when exactly one organization is available — nothing to actually choose, so this page establishes it and moves on without waiting for a click. */
   autoSelect?: boolean;
+  /** Carried through from LoginPage when this organization choice is part of resuming a pending OAuth authorization — see docs/OAUTH_BROWSER_SESSION_ARCHITECTURE.md. Completing the choice here navigates to the backend's resume endpoint (a real top-level navigation) instead of an in-app route. */
+  authorizeRequest?: string | null;
 }
 
 /**
@@ -49,6 +52,10 @@ export default function ChooseOrganizationPage() {
     setError(null);
     try {
       await switchOrganization(organizationId);
+      if (navState.authorizeRequest) {
+        window.location.href = buildAuthorizeResumeUrl(navState.authorizeRequest);
+        return;
+      }
       navigate(redirectTo, { replace: true });
     } catch (err) {
       setError(getAuthErrorMessage(err));

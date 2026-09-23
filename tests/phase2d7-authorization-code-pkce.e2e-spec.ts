@@ -400,18 +400,43 @@ describe('Phase 2D.7 — OAuth Authorization Code + PKCE (e2e)', () => {
   });
 
   // ===========================================================================
-  // Authentication requirement — no new login page, existing session only
+  // Authentication requirement — brief §19 originally required a bare 401
+  // for an unauthenticated request (no browser session mechanism existed
+  // yet). Phase 2UI.5A (docs/OAUTH_BROWSER_SESSION_ARCHITECTURE.md) closes
+  // exactly that gap: GET /oauth/authorize now redirects an unauthenticated
+  // caller to sign in and resumes the original request afterward, rather
+  // than returning a flat 401 a real top-level browser navigation could
+  // never recover from. No code is ever issued without authentication
+  // either way — only the shape of the "not yet authenticated" response
+  // changed. Full behavior now covered by
+  // tests/phase2ui5a-oauth-browser-session.e2e-spec.ts; these two remain
+  // here as the still-relevant regression check that the OLD bearer-only
+  // caller shape this phase originally introduced didn't disappear.
   // ===========================================================================
-  describe('Authentication requirement (brief §19)', () => {
-    it('an unauthenticated /authorize request is rejected before any code is ever issued', async () => {
+  describe('Authentication requirement (brief §19, superseded by Phase 2UI.5A)', () => {
+    it('an unauthenticated /authorize request is redirected to sign in — never a bare 401, never a code', async () => {
       const params = validAuthorizeParams();
-      const res = await request(app.getHttpServer()).get('/api/v1/oauth/authorize').query(params as unknown as Record<string, string>).redirects(0);
-      expect(res.status).toBe(401);
+      const query: Record<string, string> = {
+        response_type: params.responseType!,
+        client_id: params.clientId!,
+        redirect_uri: params.redirectUri!,
+        scope: params.scope!,
+        state: params.state!,
+        code_challenge: params.codeChallenge!,
+        code_challenge_method: params.codeChallengeMethod!,
+        audience: params.audience!,
+      };
+      const res = await request(app.getHttpServer()).get('/api/v1/oauth/authorize').query(query).redirects(0);
+      expect(res.status).toBe(302);
+      const location = new URL(res.headers.location);
+      expect(location.pathname).toBe('/login');
+      expect(location.searchParams.get('code')).toBeNull();
     });
 
-    it('an invalid/expired bearer session is rejected the same way', async () => {
+    it('an invalid/expired bearer token is treated as unauthenticated (redirected to sign in), not a 401', async () => {
       const res = await authorizeRequest('not-a-real-token', validAuthorizeParams());
-      expect(res.status).toBe(401);
+      expect(res.status).toBe(302);
+      expect(new URL(res.headers.location).pathname).toBe('/login');
     });
   });
 

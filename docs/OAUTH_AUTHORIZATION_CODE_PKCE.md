@@ -165,14 +165,22 @@ put it — no redirect happens).
 ## 9. User binding
 
 The code binds to `SecurityUser.id` — via `RequestContextService.userId`,
-itself populated by the platform's own existing, unmodified `JwtAuthGuard`
-from an already-verified session. Never `email`, never `Application.id`,
-never `ServiceAccount.id`. `GET /oauth/authorize` is deliberately **not**
-`@Public()` — it is the one new endpoint in this phase that runs *behind*
-the platform's global human-authentication guard, not in front of or
-instead of it. No new login page/mechanism is introduced: an unauthenticated
-request is rejected by `JwtAuthGuard` itself, before `AuthorizeService` is
-ever called.
+populated by whichever guard authenticated the request. Never `email`,
+never `Application.id`, never `ServiceAccount.id`.
+
+> **Updated by Phase 2UI.5A** (`docs/OAUTH_BROWSER_SESSION_ARCHITECTURE.md`):
+> `GET /oauth/authorize` is now `@Public()` at the framework level, guarded
+> instead by the route-scoped `OAuthBrowserSessionGuard` — a real top-level
+> browser navigation structurally cannot carry an `Authorization: Bearer`
+> header, so `JwtAuthGuard` alone could never authenticate this endpoint's
+> primary caller. `OAuthBrowserSessionGuard` accepts the SAME Bearer header
+> `JwtAuthGuard` already did (verified identically — same `TokenService`
+> call, same live `SecuritySession` revocation check) *or*, as a fallback,
+> a new short-lived `identity_browser_session` cookie. Critically, this
+> guard never rejects on its own: an unauthenticated caller is redirected
+> to sign in and the original request is safely resumed afterward — never
+> a bare 401. `AuthorizeService.handle()` itself, and everything described
+> below in this document, is completely unchanged either way.
 
 ## 10. Tenant
 
@@ -288,7 +296,7 @@ not authorized to know that.
 | 17-20,23 | Replay, expiry, client/redirect_uri mismatch, substitution | `invalid_grant`, generic |
 | 24 | 16 concurrent redemptions of one code | Exactly 1 success, 15 `invalid_grant` |
 | 25-26 | Escalated/unknown scope | `invalid_scope` |
-| 30 | Unauthenticated `/authorize` request | 401, before any code exists |
+| 30 | Unauthenticated `/authorize` request | Redirected to sign in, before any code exists (Phase 2UI.5A — was a bare 401; see §9) |
 | 31-33 | User/ServiceAccount/Application confusion | Structurally impossible — `sub` is one or the other, `principal_type` explicit |
 | 35-36 | Wrong audience / issuer | Rejected by the SAME `ExternalAccessTokenValidator` as any other external token |
 | 37-39 | Tenant/organization override, cross-tenant authorization | Server-derived tenant + independently-revalidated organization — no caller-controlled override channel exists |

@@ -8,11 +8,21 @@ import { ProductEntitlementsModule } from '../product-entitlements/product-entit
 import { ResourceServerModule } from '../resource-server/resource-server.module';
 import { SecurityAuditModule } from '../security-audit/security-audit.module';
 import { ServiceAccountsModule } from '../service-accounts/service-accounts.module';
+import { SessionsModule } from '../sessions/sessions.module';
 import { TenantsModule } from '../tenants/tenants.module';
 import { UsersModule } from '../users/users.module';
 import { AuthorizeController, DiscoveryController, JwksController, TokenController, UserInfoController } from './controllers';
-import { AuthorizationCodesRepository } from './repositories';
-import { AuthorizationCodeGrantService, AuthorizeService, ClientCredentialsService, ExternalTokenService, IdTokenService, SigningKeyService } from './services';
+import { OAuthBrowserSessionGuard } from './guards';
+import { AuthorizationCodesRepository, PendingAuthorizationsRepository } from './repositories';
+import {
+  AuthorizationCodeGrantService,
+  AuthorizeService,
+  ClientCredentialsService,
+  ExternalTokenService,
+  IdTokenService,
+  PendingAuthorizationsService,
+  SigningKeyService,
+} from './services';
 
 /**
  * Phase 2D.1 (docs/PHASE_2D_ARCHITECTURE.md §Implementation Roadmap 2D.1–2D.2)
@@ -76,9 +86,25 @@ import { AuthorizationCodeGrantService, AuthorizeService, ClientCredentialsServi
     ResourceServerModule,
     UsersModule,
     RateLimitModule,
+    // Phase 2UI.5A — OAuthBrowserSessionGuard resolves the new browser-
+    // session cookie against SessionsRepository directly (the same table
+    // JwtAuthGuard's own live-revocation check already reads).
+    SessionsModule,
   ],
   controllers: [JwksController, TokenController, AuthorizeController, UserInfoController, DiscoveryController],
-  providers: [SigningKeyService, ExternalTokenService, ClientCredentialsService, AuthorizationCodesRepository, AuthorizeService, AuthorizationCodeGrantService, IdTokenService, RateLimitGuard],
+  providers: [
+    SigningKeyService,
+    ExternalTokenService,
+    ClientCredentialsService,
+    AuthorizationCodesRepository,
+    AuthorizeService,
+    AuthorizationCodeGrantService,
+    IdTokenService,
+    RateLimitGuard,
+    OAuthBrowserSessionGuard,
+    PendingAuthorizationsRepository,
+    PendingAuthorizationsService,
+  ],
   exports: [SigningKeyService, ExternalTokenService, IdTokenService],
 })
 export class OAuthModule {}

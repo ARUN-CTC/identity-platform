@@ -225,6 +225,17 @@ model SecuritySession {
 
   rememberMe Boolean @default(false) @map("remember_me")
 
+  // Phase 2UI.5A (docs/OAUTH_BROWSER_SESSION_ARCHITECTURE.md) — an opaque,
+  // hash-only-stored secret letting a REAL top-level browser navigation to
+  // GET /oauth/authorize (which cannot carry an Authorization header)
+  // identify this same session. Deliberately NOT the access or refresh
+  // token — a strictly weaker credential, checked by exactly one new guard
+  // used on exactly two routes. Both columns nullable: most sessions never
+  // have this set (e.g. a Platform Operator-adjacent flow, or before the
+  // first login/refresh after this migration ships).
+  browserSessionSecretHash      String?   @map("browser_session_secret_hash")
+  browserSessionSecretExpiresAt DateTime? @map("browser_session_secret_expires_at") @db.Timestamptz
+
   refreshTokens SecurityRefreshToken[]
 
   @@index([tenantId], map: "idx_security_session_tenant")

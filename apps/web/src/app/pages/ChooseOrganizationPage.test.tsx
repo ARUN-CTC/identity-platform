@@ -119,6 +119,43 @@ describe("ChooseOrganizationPage", () => {
     expect(await screen.findByText("Dashboard page")).toBeInTheDocument();
   });
 
+  it("resumes a pending OAuth authorization via a real top-level navigation instead of an in-app route, once an organization is chosen", async () => {
+    const user = userEvent.setup();
+    vi.mocked(getCurrentUser).mockResolvedValue(BASE_ME).mockResolvedValueOnce(BASE_ME).mockResolvedValueOnce({
+      ...BASE_ME,
+      organizationContext: { organizationId: "org-1", organizationName: "Org One" },
+    });
+    vi.mocked(listMyOrganizations).mockResolvedValue(ORGS);
+
+    const originalLocation = window.location;
+    const assignedHrefs: string[] = [];
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: {
+        ...originalLocation,
+        set href(value: string) {
+          assignedHrefs.push(value);
+        },
+      },
+    });
+
+    try {
+      renderPage({ from: "/dashboard", authorizeRequest: "ref-xyz789" });
+
+      await screen.findByText("Org One");
+      await user.click(screen.getByText("Org One"));
+      await user.click(screen.getByRole("button", { name: "Continue" }));
+
+      await vi.waitFor(() => expect(assignedHrefs).toHaveLength(1));
+      const url = new URL(assignedHrefs[0]);
+      expect(url.pathname).toBe("/api/v1/oauth/authorize/resume");
+      expect(url.searchParams.get("ref")).toBe("ref-xyz789");
+      expect(screen.queryByText("Dashboard page")).not.toBeInTheDocument();
+    } finally {
+      Object.defineProperty(window, "location", { configurable: true, value: originalLocation });
+    }
+  });
+
   it("lets the caller stay tenant-wide instead of picking one", async () => {
     const user = userEvent.setup();
     vi.mocked(getCurrentUser).mockResolvedValue(BASE_ME);
