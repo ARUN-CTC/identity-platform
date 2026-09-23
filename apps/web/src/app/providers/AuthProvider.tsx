@@ -23,6 +23,7 @@ import {
   type CurrentRole,
   type MyOrganization,
 } from "@/shared/api";
+import { SessionExpiredDialog } from "@/shared/auth/components/SessionExpiredDialog";
 import type { AuthUser, OrganizationContext, Tenant } from "@/shared/types/auth";
 import { decodeJwtPayload, type AccessTokenClaims } from "@/shared/utils/jwt";
 
@@ -33,6 +34,11 @@ export interface LoginCredentials {
   email: string;
   password: string;
   rememberMe?: boolean;
+}
+
+export interface LoginResult {
+  organizationContext: OrganizationContext | null;
+  availableOrganizations: MyOrganization[];
 }
 
 /**
@@ -106,7 +112,15 @@ interface AuthContextValue {
   isAuthenticated: boolean;
   /** True during initial session bootstrap (restoring/dev-login), covering both token issuance and the `/auth/me` fetch that follows it. */
   isLoading: boolean;
-  login: (credentials: LoginCredentials) => Promise<void>;
+  /**
+   * Resolves with the freshly-established organization state — NOT read
+   * from `useAuth()`'s own (still-stale-until-next-render) context value,
+   * since a caller acting on the result synchronously right after `await
+   * login(...)` would otherwise see the pre-login closure. Callers that need
+   * to decide "auto-select the sole organization" / "show a chooser" (see
+   * ChooseOrganizationPage) read this return value, not context.
+   */
+  login: (credentials: LoginCredentials) => Promise<LoginResult>;
   /** Real server-side logout (revokes the session + its refresh tokens) plus full local cleanup. Safe to call even if the server call fails. */
   signOut: () => Promise<void>;
   /**
@@ -138,6 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [sessionExpiredOpen, setSessionExpiredOpen] = useState(false);
   const bootstrapped = useRef(false);
 
   function applyMe(me: Awaited<ReturnType<typeof getCurrentUser>>, organizations: MyOrganization[]) {
@@ -173,7 +188,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     fallbackEmail: string,
     tenantCode?: string,
     rememberMe = false,
-  ) {
+  ): Promise<LoginResult> {
     const claims = decodeJwtPayload<AccessTokenClaims>(tokens.accessToken);
     setSessionAccessToken(tokens.accessToken);
     setSessionRefreshToken(tokens.refreshToken, rememberMe);
@@ -186,6 +201,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const [me, organizations] = await Promise.all([getCurrentUser(), listMyOrganizations()]);
       applyMe(me, organizations);
+      return {
+        organizationContext: me.organizationContext.organizationId
+          ? { id: me.organizationContext.organizationId, name: me.organizationContext.organizationName ?? "" }
+          : null,
+        availableOrganizations: organizations,
+      };
     } catch {
       // Session is still valid (tokens above are real) — just missing the
       // richer context. Fail closed: permissions stays empty, so every
@@ -196,6 +217,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         severity: "warning",
         autoHideDuration: null,
       });
+      return { organizationContext: null, availableOrganizations: [] };
     }
   }
 
@@ -277,7 +299,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once; bootstrapped ref guards StrictMode's double-invoke
   }, []);
 
-  // A 401 the client couldn't recover from (no/expired refresh token) — move to signed-out state.
+  // A 401 the client couldn't recover from (no/expired refresh token) — move
+  // to signed-out state and show the dedicated dialog (brief §15/§22) rather
+  // than a bare toast. `ProtectedRoute` (a Router descendant; AuthProvider
+  // itself sits above the Router — see App.tsx — and so cannot call
+  // useNavigate) reactively redirects the page underneath the instant
+  // isAuthenticated flips false; the dialog's own "Sign in" button only
+  // needs to close itself to reveal it.
   useEffect(() => {
     return onSessionExpired(() => {
       setUser(null);
@@ -289,9 +317,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSessionId(null);
       setIsAuthenticated(false);
       queryClient.clear();
-      notify({ message: "Your session has expired. Please sign in again.", severity: "warning", autoHideDuration: 8000 });
+      setSessionExpiredOpen(true);
     });
-  }, [queryClient, notify]);
+  }, [queryClient]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -306,7 +334,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isLoading,
       login: async (credentials) => {
         const tokens = await loginRequest({ ...credentials, deviceInfo: "Identity Platform Web" });
-        await establishSession(tokens, credentials.email, credentials.tenantCode, credentials.rememberMe);
+        return establishSession(tokens, credentials.email, credentials.tenantCode, credentials.rememberMe);
       },
       signOut: async () => {
         try {
@@ -337,7 +365,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [user, tenant, permissions, roles, organizationContext, availableOrganizations, sessionId, isAuthenticated, isLoading],
   );
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+      <SessionExpiredDialog open={sessionExpiredOpen} onSignIn={() => setSessionExpiredOpen(false)} />
+    </AuthContext.Provider>
+  );
 }
 
 export function useAuth(): AuthContextValue {
