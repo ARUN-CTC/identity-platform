@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { OrganizationsModule } from '../organizations/organizations.module';
 import { SecurityAuditModule } from '../security-audit/security-audit.module';
-import { MembershipsController } from './controllers';
+import { MembershipsController, TenantMembershipsController } from './controllers';
 import { MembershipsRepository } from './repositories';
 import { MembershipsService } from './services';
 
@@ -9,11 +9,12 @@ import { MembershipsService } from './services';
  * Phase 2A — the Identity <-> Organization link (docs/PHASE_2A.md). Imported
  * by UsersModule (invitation/user-creation flow) and AuthenticationModule
  * (login-time "does this global Identity belong to this tenant" check), in
- * addition to registering its own read/status-transition controller.
+ * addition to registering its own read/status-transition controllers
+ * (per-organization + Phase 2UI.4's tenant-wide read).
  */
 @Module({
   imports: [OrganizationsModule, SecurityAuditModule],
-  controllers: [MembershipsController],
+  controllers: [MembershipsController, TenantMembershipsController],
   providers: [MembershipsRepository, MembershipsService],
   exports: [MembershipsRepository, MembershipsService],
 })

@@ -19,6 +19,8 @@ const DashboardPage = lazy(() => import("@/app/pages/DashboardPage"));
 const SettingsPage = lazy(() => import("@/app/pages/SettingsPage"));
 const UsersPage = lazy(() => import("@/features/users/pages/UsersPage"));
 const UserDetailsPage = lazy(() => import("@/features/users/pages/UserDetailsPage"));
+const MembershipsPage = lazy(() => import("@/features/memberships/pages/MembershipsPage"));
+const InvitationsPage = lazy(() => import("@/features/memberships/pages/InvitationsPage"));
 const MySessionsPage = lazy(() => import("@/features/sessions/pages/MySessionsPage"));
 const OrganizationsPage = lazy(() => import("@/features/organizations/pages/OrganizationsPage"));
 const OrganizationDetailsPage = lazy(() => import("@/features/organizations/pages/OrganizationDetailsPage"));
@@ -84,6 +86,22 @@ export const router = createBrowserRouter([
             element: (
               <PermissionRoute permission={PERMISSIONS.USER_VIEW}>
                 <UserDetailsPage />
+              </PermissionRoute>
+            ),
+          },
+          {
+            path: "memberships",
+            element: (
+              <PermissionRoute permission={PERMISSIONS.USER_VIEW}>
+                <MembershipsPage />
+              </PermissionRoute>
+            ),
+          },
+          {
+            path: "invitations",
+            element: (
+              <PermissionRoute permission={PERMISSIONS.USER_VIEW}>
+                <InvitationsPage />
               </PermissionRoute>
             ),
           },

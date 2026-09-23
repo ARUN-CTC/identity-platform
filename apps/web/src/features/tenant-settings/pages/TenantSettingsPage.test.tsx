@@ -13,11 +13,8 @@ import { login, type TenantRecord } from "@/shared/api";
 
 import TenantSettingsPage from "./TenantSettingsPage";
 
-// Matches test/setup.ts's mocked getCurrentUser — AuthProvider will expose
-// this as `useTenant().tenant.id`, the ONLY id TenantSettingsPage is allowed
-// to request (see shared/api/tenants.ts's header comment).
+// Matches test/setup.ts's mocked getCurrentUser.
 const OWN_TENANT_ID = "test-tenant-id";
-const OTHER_TENANT_ID = "some-other-tenant-uuid-belonging-to-someone-else";
 
 function tenant(overrides: Partial<TenantRecord> = {}): TenantRecord {
   return {
@@ -97,7 +94,7 @@ describe("TenantSettingsPage", () => {
 
   it("loads and displays this tenant's own settings", async () => {
     renderPage(async (url) => {
-      if (url.endsWith(`/tenants/${OWN_TENANT_ID}`)) return jsonResponse(200, tenant());
+      if (url.endsWith("/tenants/me")) return jsonResponse(200, tenant());
       throw new Error(`Unexpected fetch in test: ${url}`);
     });
 
@@ -111,9 +108,9 @@ describe("TenantSettingsPage", () => {
     expect(screen.getAllByText("Active").length).toBeGreaterThanOrEqual(2);
   });
 
-  it("requests only this caller's own tenant id — never any other id, never a route param", async () => {
+  it("requests /tenants/me only — never a tenant id anywhere in the URL", async () => {
     const fetchMock = renderPage(async (url) => {
-      if (url.endsWith(`/tenants/${OWN_TENANT_ID}`)) return jsonResponse(200, tenant());
+      if (url.endsWith("/tenants/me")) return jsonResponse(200, tenant());
       throw new Error(`Unexpected fetch in test: ${url}`);
     });
 
@@ -122,19 +119,18 @@ describe("TenantSettingsPage", () => {
     const tenantUrls = fetchMock.mock.calls.map((c) => c[0] as string).filter((u) => u.includes("/tenants/"));
     expect(tenantUrls.length).toBeGreaterThan(0);
     for (const url of tenantUrls) {
-      expect(url.endsWith(`/tenants/${OWN_TENANT_ID}`)).toBe(true);
-      expect(url).not.toContain(OTHER_TENANT_ID);
+      expect(new URL(url).pathname).toBe("/api/v1/tenants/me");
+      expect(url).not.toContain(OWN_TENANT_ID);
     }
     // No list endpoint (GET /tenants, no id) is ever called from this page —
-    // the backend's list is platform-wide and unscoped (see
-    // shared/api/tenants.ts), and this app never exposes it.
+    // the full tenant registry lives only on the Platform Console.
     const listCalls = fetchMock.mock.calls.map((c) => new URL(c[0] as string).pathname).filter((path) => /\/tenants$/.test(path));
     expect(listCalls).toEqual([]);
   });
 
   it("shows the real backend error message when the tenant fails to load", async () => {
     renderPage(async (url) => {
-      if (url.endsWith(`/tenants/${OWN_TENANT_ID}`)) return jsonResponse(500, null, "An unexpected error occurred");
+      if (url.endsWith("/tenants/me")) return jsonResponse(500, null, "An unexpected error occurred");
       throw new Error(`Unexpected fetch in test: ${url}`);
     });
 
@@ -144,10 +140,10 @@ describe("TenantSettingsPage", () => {
   it("edits the safe profile fields and saves, without ever offering a status or tenant-id control", async () => {
     const user = userEvent.setup();
     const fetchMock = renderPage(async (url, init) => {
-      if (url.endsWith(`/tenants/${OWN_TENANT_ID}`) && (init?.method ?? "GET") === "GET") {
+      if (url.endsWith("/tenants/me") && (init?.method ?? "GET") === "GET") {
         return jsonResponse(200, tenant());
       }
-      if (url.endsWith(`/tenants/${OWN_TENANT_ID}`) && init?.method === "PATCH") {
+      if (url.endsWith("/tenants/me") && init?.method === "PATCH") {
         const body = JSON.parse(init.body as string);
         return jsonResponse(200, tenant({ tenantName: body.tenantName }));
       }
@@ -173,7 +169,7 @@ describe("TenantSettingsPage", () => {
 
     expect(await screen.findByText("Tenant settings were updated successfully.")).toBeInTheDocument();
     const patchCall = fetchMock.mock.calls.find((c) => (c[1] as RequestInit | undefined)?.method === "PATCH")!;
-    expect((patchCall[0] as string).endsWith(`/tenants/${OWN_TENANT_ID}`)).toBe(true);
+    expect((patchCall[0] as string).endsWith("/tenants/me")).toBe(true);
     const patchBody = JSON.parse((patchCall[1] as RequestInit).body as string);
     expect(patchBody).not.toHaveProperty("status");
     expect(patchBody).not.toHaveProperty("id");

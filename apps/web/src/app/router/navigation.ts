@@ -5,7 +5,9 @@ import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
 import DevicesOutlinedIcon from "@mui/icons-material/DevicesOutlined";
 import ExtensionOutlinedIcon from "@mui/icons-material/ExtensionOutlined";
 import GroupOutlinedIcon from "@mui/icons-material/GroupOutlined";
+import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
 import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
+import MailOutlineIcon from "@mui/icons-material/MailOutline";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import ShieldOutlinedIcon from "@mui/icons-material/ShieldOutlined";
 import TuneOutlinedIcon from "@mui/icons-material/TuneOutlined";
@@ -52,13 +54,27 @@ import type { NavigationSection } from "@/shared/types/navigation";
  * always visible, like Settings, since it needs no permission beyond
  * being signed in.
  *
- * Same reasoning for "Product Entitlements" below: `PRODUCT_ENTITLEMENT_VIEW`/
+ * Same reasoning for "Product Access" below: `PRODUCT_ENTITLEMENT_VIEW`/
  * `PRODUCT_ENTITLEMENT_MANAGE`/`PRODUCT_VIEW`/`PRODUCT_MANAGE` are all
  * `platform_only = TRUE` and gate only the Platform-Operator-only
  * CRUD/lifecycle surface and the product catalog itself — never grantable
  * to a tenant Role, so never usable to gate a tenant-sidebar item. The real
  * tenant-facing endpoint (`GET /product-entitlements`, read-only,
  * self-service) needs nothing beyond being signed in, same as My Sessions.
+ *
+ * "Memberships" and "Invitations" (Phase 2UI.4) are both gated on
+ * `USER_VIEW` — the same permission the existing per-organization Members
+ * tab already requires, since `GET /memberships` is a read of the exact
+ * same rows, just unscoped from a single organization (see
+ * src/modules/memberships/controllers/tenant-memberships.controller.ts).
+ *
+ * Applications and Service Accounts are deliberately NOT here, same as
+ * Platform Operators/Products above — and for a stronger reason than most:
+ * every endpoint for them is gated by a `platform_only = TRUE` permission
+ * enforced by a database trigger that forbids ever granting it to a tenant
+ * Role, so a tenant-facing nav item for either could never become reachable
+ * no matter what future Role a tenant admin is given (see
+ * docs/PHASE_2UI4.md's API gap table).
  */
 export const navigationSections: NavigationSection[] = [
   {
@@ -92,6 +108,20 @@ export const navigationSections: NavigationSection[] = [
         order: 10,
         children: [
           { id: "users", label: "Users", path: "/users", icon: GroupOutlinedIcon, permission: PERMISSIONS.USER_VIEW },
+          {
+            id: "memberships",
+            label: "Memberships",
+            path: "/memberships",
+            icon: GroupsOutlinedIcon,
+            permission: PERMISSIONS.USER_VIEW,
+          },
+          {
+            id: "invitations",
+            label: "Invitations",
+            path: "/invitations",
+            icon: MailOutlineIcon,
+            permission: PERMISSIONS.USER_VIEW,
+          },
           {
             id: "organizations",
             label: "Organizations",
@@ -150,7 +180,7 @@ export const navigationSections: NavigationSection[] = [
       },
       {
         id: "product-entitlements",
-        label: "Product Entitlements",
+        label: "Product Access",
         path: "/product-entitlements",
         icon: ExtensionOutlinedIcon,
         order: 57,

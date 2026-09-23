@@ -85,6 +85,24 @@ export class MembershipsService {
     return new PaginatedResult(items, total, query);
   }
 
+  /**
+   * Phase 2UI.4 — tenant-wide membership read, across every organization in
+   * the caller's own tenant. Backs TenantMembershipsController
+   * (`GET /memberships`). An `organizationId` filter still gets the same
+   * RLS-scoped 404-on-foreign-tenant check as listForOrganization() — a
+   * filter must never silently return zero rows for an organization id that
+   * belongs to someone else's tenant when the caller could instead be told
+   * plainly that it doesn't exist for them.
+   */
+  async listForTenant(query: PaginationQueryDto, filters: { organizationId?: string; userId?: string; status?: MembershipStatus }) {
+    const tenantId = this.context.requireTenantId();
+    if (filters.organizationId) {
+      await this.organizationsService.findOne(filters.organizationId);
+    }
+    const { items, total } = await this.repository.listForTenant(tenantId, query, filters);
+    return new PaginatedResult(items, total, query);
+  }
+
   async setStatus(organizationId: string, userId: string, status: AdminSettableMembershipStatus): Promise<Membership> {
     const tenantId = this.context.requireTenantId();
     await this.organizationsService.findOne(organizationId);

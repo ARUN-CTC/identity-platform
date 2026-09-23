@@ -39,9 +39,20 @@ export function SidebarContent({ collapsed, onToggleCollapsed, onNavigate }: Sid
         sx={{ height: layoutSpacing.topbarHeight, px: collapsed ? 0 : 2, flexShrink: 0 }}
       >
         {!collapsed && (
-          <Typography variant="h5" component="span" sx={{ fontWeight: 700, letterSpacing: "-0.01em" }}>
-            Identity Platform
-          </Typography>
+          <Stack sx={{ lineHeight: 1.15 }}>
+            <Typography variant="h5" component="span" sx={{ fontWeight: 700, letterSpacing: "-0.01em" }}>
+              Identity Platform
+            </Typography>
+            {/* The tenant-side counterpart to the Platform Console's own
+                "Platform Console" + "PLATFORM OPERATOR" chip branding
+                (platform-console/layout/PlatformShell.tsx) — lighter-weight
+                here since this is the default, lower-privilege surface, but
+                still an explicit, unmissable "which console am I in" signal
+                (brief §27), never left to be inferred from the URL alone. */}
+            <Typography variant="caption" component="span" color="text.secondary">
+              Tenant Administration
+            </Typography>
+          </Stack>
         )}
         <IconButton
           onClick={onToggleCollapsed}

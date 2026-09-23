@@ -54,7 +54,7 @@ export default function ProductEntitlementsPage() {
   return (
     <>
       <PageHeader
-        title="Product Entitlements"
+        title="Product Access"
         description="Products your tenant is entitled to use. Granting or revoking a product is managed by the platform operator, not from here."
       />
 
@@ -97,7 +97,20 @@ export default function ProductEntitlementsPage() {
                         )}
                       </Stack>
                     }
-                    secondary={entitlement.productSlug}
+                    secondaryTypographyProps={{ component: "div" }}
+                    secondary={
+                      <Stack spacing={0.25} sx={{ mt: 0.25 }}>
+                        <Typography variant="caption" color="text.secondary">
+                          {entitlement.productSlug}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Identity Platform access: {entitlement.status === "ACTIVE" ? "✓ Tenant entitlement active" : "✗ Not entitled"}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {entitlement.productName} permissions: managed by {entitlement.productName}, not Identity Platform
+                        </Typography>
+                      </Stack>
+                    }
                   />
                 </ListItem>
               );

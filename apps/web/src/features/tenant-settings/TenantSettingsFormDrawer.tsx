@@ -34,7 +34,7 @@ export interface TenantSettingsFormDrawerProps {
 export function TenantSettingsFormDrawer({ open, onClose, tenant, onSaved }: TenantSettingsFormDrawerProps) {
   const notify = useNotify();
   const [formError, setFormError] = useState<string | null>(null);
-  const updateMutation = useUpdateOwnTenantMutation(tenant.id);
+  const updateMutation = useUpdateOwnTenantMutation();
 
   const defaults: FormValues = {
     tenantName: tenant.tenantName,

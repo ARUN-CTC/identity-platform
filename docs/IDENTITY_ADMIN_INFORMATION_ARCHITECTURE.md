@@ -35,15 +35,15 @@ My Tenant
 ├── Identity
 │   ├── Users                                   [EXISTS — /users]
 │   ├── Organizations                           [EXISTS — /organizations]
-│   ├── Memberships                             [GAP — see §3]
-│   ├── Invitations                             [GAP — see §3]
+│   ├── Memberships                             [EXISTS — /memberships, Phase 2UI.4, see §3]
+│   ├── Invitations                             [EXISTS — /invitations, Phase 2UI.4, see §3]
 │   └── My Sessions                             [EXISTS — /my-sessions, self-service only]
 │
 ├── Roles & Permissions
 │   ├── Roles                                   [EXISTS — /roles]
 │   └── Permission Catalog                      [EXISTS — /permissions]
 │
-├── Product Access                              [EXISTS — /product-entitlements, READ-ONLY]
+├── Product Access                              [EXISTS — /product-entitlements, READ-ONLY, relabeled Phase 2UI.4]
 │
 ├── Security & Audit
 │   ├── Security Events                         [EXISTS — /security/audit-events, tab 1]
@@ -59,16 +59,18 @@ My Tenant
 - **"Identity" as a new grouping folder** — Users/Organizations/Memberships/Invitations/Sessions are currently five ungrouped top-level-ish nav items (per `app/router/navigation.ts`); grouping them under one "Identity" label matches the brief's own conceptual model (§6, §10, §11: "Global User", "Membership must be first-class") and gives Memberships/Invitations a place to live once built (see §3).
 - **"Product Access" renamed from whatever label `/product-entitlements` currently carries** — the page is confirmed read-only (frontend inventory: "page copy explicitly states granting/revoking is Platform-Operator-only"); the label should say "Access," not "Entitlements," to a tenant admin — "entitlement" is the platform's own internal noun for the grant record, not a tenant-facing concept. Purely a labeling change, zero code/route change otherwise.
 
-## 3. Gap: Memberships and Invitations are not first-class today
+## 3. Gap: Memberships and Invitations are not first-class today — RESOLVED in Phase 2UI.4
 
-The brief (§11) is explicit: *"Membership must be first-class... Do NOT collapse Identity Membership, Product Role, Product Permission."* Today:
+The brief (§11) is explicit: *"Membership must be first-class... Do NOT collapse Identity Membership, Product Role, Product Permission."* This section originally described the gap; it's kept below for the historical reasoning, with the actual resolution noted at the end.
 
 - **No standalone `/memberships` route exists.** Memberships are only reachable nested inside `OrganizationDetailsPage`'s "Members" tab (one organization at a time). There is no cross-organization membership list, no way to answer "show me every membership this tenant has, regardless of organization" without opening every organization one at a time.
 - **No standalone invitation-tracking view exists.** Sending is implicit (buried in `CreateUserDrawer` / a `ResendInvitationButton` inside the organization members list); there is no page listing "invitations sent, pending, expired, accepted" — an admin cannot answer "who hasn't accepted yet" without cross-referencing user status per row.
 
-**Backend support check** (from `docs/IDENTITY_UX_GAP_ANALYSIS.md` §API Gap Table): `GET /organizations/:organizationId/members` exists today but is scoped to one organization — there is no tenant-wide `GET /memberships` across all organizations. A first-class Memberships screen needs either (a) the frontend to fetch every organization's members and merge client-side (works today, doesn't scale past a handful of organizations, no server-side search/filter possible), or (b) a new `GET /tenants/me/memberships` aggregate endpoint. **Recommendation: P1, new backend endpoint** — this is exactly the kind of aggregate view Identity Platform should own (it's identity/membership data, not product data), and doing it by N client-side calls violates the platform's own established server-side-pagination convention everywhere else.
+**Backend support check** (original, from `docs/IDENTITY_UX_GAP_ANALYSIS.md` §API Gap Table): `GET /organizations/:organizationId/members` exists today but is scoped to one organization — there is no tenant-wide `GET /memberships` across all organizations. **Recommendation: P1, new backend endpoint** — this is exactly the kind of aggregate view Identity Platform should own (it's identity/membership data, not product data), and doing it by N client-side calls violates the platform's own established server-side-pagination convention everywhere else.
 
-Invitations: the DTOs (`ValidateInvitationDto`, `AcceptInvitationDto`) and events (`iam.user_invited` — visible in Security Events, confirmed live earlier in this project) already carry everything needed for a tracking list, but there is no `GET /invitations` list endpoint at all — only the two public accept-flow endpoints. **Recommendation: P1, new backend endpoint** (`GET /invitations?status=pending|accepted|expired`), paired with a new Tenant Console screen.
+**Resolution (Phase 2UI.4)**: `GET /memberships` was added (`src/modules/memberships/controllers/tenant-memberships.controller.ts`) — tenant-wide, RLS-scoped, gated on the same `USER_VIEW` permission as the existing per-organization route, with `organizationId`/`userId`/`status` filters. One endpoint serves three UI needs at once (per the "look for one common capability" discipline): the `/memberships` screen, the `/invitations` screen (same endpoint, `status=INVITED` fixed filter), and User Detail's own Memberships tab (`?userId=`). See `docs/PHASE_2UI4.md` and `docs/IDENTITY_TENANT_CONSOLE.md` for the full account, including the 6 new e2e tests (2 of them explicit cross-tenant isolation checks) and the still-open sub-gaps (no revoke-invitation endpoint, no tenant-wide invitation-token-expiry field).
+
+Invitations: the DTOs (`ValidateInvitationDto`, `AcceptInvitationDto`) and events (`iam.user_invited` — visible in Security Events, confirmed live earlier in this project) already carried everything needed for a tracking list; the same `GET /memberships?status=INVITED` resolution above covers this rather than a separate `GET /invitations` endpoint, since a pending invitation already IS a `Membership` row at `INVITED` status — no separate concept needed.
 
 ## 4. Gap: Organization Types placement is architecturally inconsistent
 
@@ -78,6 +80,8 @@ Frontend inventory: `OrganizationTypesPage`'s own on-screen copy describes itsel
 - (b) the copy is right and this is a real cross-tenant data-integrity gap — one tenant's admin editing/deleting a type could affect every other tenant using it, with no ownership boundary enforcing otherwise.
 
 This wasn't resolved by either inventory pass (it requires reading the actual `organization_type` table's tenant-scoping, which neither agent was asked to check at the schema level) — **flagged as an open question for Phase 2UI.2, not a UX decision this document can make alone.** If (b), the correct fix is moving this under **Platform Console → Platform Administration** as a true shared-catalog page, parallel to Products.
+
+**Answer (confirmed in Phase 2UI.4)**: (b) is correct. `OrganizationTypesRepository`'s own source comment states plainly: *"organization_type is global reference data (no tenant_id)"* — confirmed by reading `src/modules/organization-types/repositories/organization-types.repository.ts` directly; every method (`findMany`/`findById`/`create`/`update`/`remove`) operates on the table with zero tenant filter. Any tenant admin holding the tenant-grantable `ORGANIZATION_MANAGE` permission can create/edit/delete a type that every other tenant on the platform also sees and uses. This is architecturally the same shape as the Permission Catalog (`GET/POST/PATCH/DELETE /permissions` — also global, also gated by a tenant-grantable permission, per `permissions.repository.ts`'s identical "global reference data" comment) — a pattern this codebase uses deliberately for small, low-churn shared catalogs, not a one-off bug. Phase 2UI.4 did **not** move this page or add tenant scoping to it — that would be a real backend behavior change (write-isolation, not a UI concern) outside this phase's scope, and given the Permissions catalog already establishes the same pattern as apparently-intentional, unilaterally "fixing" only one of the two would be an inconsistent, undiscussed judgment call. Documented as a known, accepted architectural characteristic in `docs/PHASE_2UI4.md`'s Known Issues, not fixed.
 
 ## 5. Platform Console IA (`/platform-console`)
 
@@ -132,7 +136,9 @@ This directly contradicts brief §17 (*"Service Account is NOT a User. Make this
 
 ## 8. Dashboard note (applies to both consoles)
 
-Both dashboards are currently, and deliberately, static quick-link tiles with a code comment explicitly refusing to fabricate metrics from `meta.total` counts alone. That restraint was correct given no aggregate-stats endpoint exists — see `docs/IDENTITY_UX_GAP_ANALYSIS.md` §Dashboard for exactly which of the brief's 10 requested KPI questions can be answered today at zero backend cost (via existing `meta.total`), and which need a new endpoint.
+Both dashboards were, at the time this document was written, static quick-link tiles with a code comment explicitly refusing to fabricate metrics from `meta.total` counts alone. That restraint was correct given no aggregate-stats endpoint existed yet — see `docs/IDENTITY_UX_GAP_ANALYSIS.md` §Dashboard for exactly which of the brief's 10 requested KPI questions could be answered at zero backend cost (via existing `meta.total`), and which needed a new endpoint.
+
+**Updated (Phase 2UI.3 / Phase 2UI.4)**: both dashboards now show real `meta.total`-derived KPI tiles (Platform Console: Tenants, Products; Tenant Console: Users, Organizations, Active memberships, Pending invitations, Products enabled) plus a "recent security events" panel (Tenant Console also adds "recent login attempts"), each gated by `PermissionGate` and hidden — never zero'd or 403'd — when the caller lacks the permission. Still no client-side aggregation across N calls, still no fabricated numbers; the restraint itself is unchanged, only the set of real endpoints available to build on has grown.
 
 ## 9. What this IA deliberately does NOT do
 

@@ -26,6 +26,8 @@ import { LoadingState } from "@/design-system/components/LoadingState";
 import { PageHeader } from "@/design-system/components/PageHeader";
 import { StatusBadge } from "@/design-system/components/StatusBadge";
 import { useConfirm } from "@/design-system/patterns/confirmation";
+import { getMembershipStatusMeta } from "@/features/organizations/statusMeta";
+import { useTenantMembershipsQuery } from "@/features/memberships/hooks";
 import { PermissionGate } from "@/shared/components/PermissionGate";
 import { PERMISSIONS } from "@/shared/auth/permissions";
 import { getApiErrorMessage } from "@/shared/api";
@@ -51,6 +53,13 @@ export default function UserDetailsPage() {
   const rolesQuery = useUserRolesQuery(id);
   const deleteMutation = useDeleteUserMutation();
   const revokeRoleMutation = useRevokeRoleMutation(id ?? "");
+  // This user's own memberships within the CURRENT tenant only — the
+  // Global User <-> Membership <-> Tenant model (see docs/PHASE_2UI4.md,
+  // brief §6): this page must never imply the user "belongs to" this
+  // tenant exclusively, and GET /memberships is itself tenant-scoped
+  // server-side, so a foreign-tenant membership could never appear here
+  // even if one existed.
+  const membershipsQuery = useTenantMembershipsQuery({ userId: id, limit: 100 }, !!id);
 
   const displayName = userQuery.data
     ? [userQuery.data.firstName, userQuery.data.lastName].filter(Boolean).join(" ") || userQuery.data.email
@@ -125,6 +134,7 @@ export default function UserDetailsPage() {
       <Tabs value={tab} onChange={(_event: SyntheticEvent, value: number) => setTab(value)} sx={{ mb: 2 }}>
         <Tab label="Overview" />
         <Tab label="Roles" />
+        <Tab label="Memberships" />
       </Tabs>
 
       {tab === 0 && (
@@ -208,6 +218,45 @@ export default function UserDetailsPage() {
             )}
           </Card>
         </Stack>
+      )}
+
+      {tab === 2 && (
+        <Card>
+          {membershipsQuery.isLoading ? (
+            <CardContent>
+              <LoadingState dense />
+            </CardContent>
+          ) : membershipsQuery.isError ? (
+            <CardContent>
+              <ErrorState dense description={getApiErrorMessage(membershipsQuery.error)} onRetry={() => membershipsQuery.refetch()} />
+            </CardContent>
+          ) : !membershipsQuery.data || membershipsQuery.data.items.length === 0 ? (
+            <CardContent>
+              <EmptyState variant="no-data" title="No memberships" description="This user has no organization membership in this tenant." dense />
+            </CardContent>
+          ) : (
+            <List disablePadding>
+              {membershipsQuery.data.items.map((membership) => {
+                const meta = getMembershipStatusMeta(membership.status);
+                return (
+                  <ListItem
+                    key={membership.id}
+                    secondaryAction={
+                      <Button size="small" onClick={() => navigate(`/organizations/${membership.organization.id}`)}>
+                        View organization
+                      </Button>
+                    }
+                  >
+                    <ListItemText primary={membership.organization.organizationName} secondary={`Member since ${formatDate(membership.createdAt)}`} />
+                    <Box sx={{ mr: 2 }}>
+                      <StatusBadge status={meta.statusKey} label={meta.label} />
+                    </Box>
+                  </ListItem>
+                );
+              })}
+            </List>
+          )}
+        </Card>
       )}
 
       {id && <AssignRoleDialog open={assignRoleOpen} userId={id} onClose={() => setAssignRoleOpen(false)} />}

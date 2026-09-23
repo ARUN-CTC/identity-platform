@@ -36,51 +36,22 @@ export interface UpdateTenantInput {
 }
 
 /**
- * ⚠ KNOWN BACKEND FINDING — cross-tenant authorization gap, not a frontend
- * workaround target.
- *
- * `GET/PATCH /tenants/:id` are gated only by `@RequirePermissions('TENANT_MANAGE')`
- * (src/modules/tenants/controllers/tenants.controller.ts) — a permission any
- * tenant's own SUPER_ADMIN role legitimately holds (TENANT_MANAGE is
- * tenant-grantable, not platform_only — see shared/auth/permissions.ts).
- * `TenantsRepository`'s own source comment states plainly: "tenant has no
- * RLS (it is the tenant registry itself, not tenant-scoped)". Every method
- * — findById/update/activate/suspend/softDelete — takes the path-param id
- * and operates on it with ZERO ownership check against the caller's own
- * tenant. There is no `GET /tenants` list endpoint restriction either: it
- * returns every tenant on the platform.
- *
- * Net effect: any tenant admin holding TENANT_MANAGE can read or modify ANY
- * OTHER tenant in the system by UUID, not just their own, simply by calling
- * the API directly (this has nothing to do with what this frontend renders
- * — the backend accepts the request regardless).
- *
- * This module does NOT fix that — it cannot be fixed from the frontend.
- * What it does do, as a deliberate, load-bearing constraint:
- *   - `getOwnTenant`/`updateOwnTenant` below are the ONLY entry points this
- *     app exposes to `/tenants/:id`.
- *   - The `id` they take must always be the caller's own
- *     `useTenant().tenant.id` (sourced from `GET /auth/me` via TenantProvider, never from a URL
- *     param, form field, dropdown, or any other user-editable input) — see
- *     TenantSettingsPage, which is the only caller.
- *   - `/tenants` (list), `/tenants` (create), `/tenants/:id/activate`,
- *     `/tenants/:id/suspend`, and `DELETE /tenants/:id` are intentionally
- *     NOT wrapped here at all — those are platform-registry/lifecycle
- *     operations with no legitimate self-service use, not "this tenant's
- *     own configuration" (see PHASE 2 — TENANT SETTINGS brief §7: Platform
- *     Operator is a separate boundary; do not expose platform-only tenant
- *     management controls in the tenant shell).
- * This restricts what a well-behaved instance of this UI can do; it is
- * NOT a security boundary and must not be described as one. The real fix
- * (scoping every TenantsRepository method to the caller's own tenant id
- * unless the caller is a Platform Operator) belongs in the backend and is
- * reported as a blocking finding in the Phase 2 Tenant Settings
- * verification report.
+ * `GET/PATCH /tenants/me` (src/modules/tenants/controllers/tenants.controller.ts)
+ * — Phase 2D security remediation. These routes take no id at all; the
+ * backend resolves the caller's own tenant exclusively from
+ * `RequestContextService.requireTenantId()` (JWT-derived), so there is
+ * nothing for a client to substitute another tenant's id into. The prior
+ * `/tenants/:id` shape (no ownership check — any TENANT_MANAGE holder could
+ * read/modify any tenant by UUID) was removed entirely as part of that fix;
+ * the full tenant registry now lives only on `PlatformTenantsController`
+ * (`/platform/tenants`), gated by `PlatformJwtAuthGuard` +
+ * `RequirePlatformPermissions('PLATFORM_TENANT_VIEW'|'PLATFORM_TENANT_MANAGE')`
+ * — permissions that can never be granted to a tenant Role.
  */
-export function getOwnTenant(tenantId: string): Promise<TenantRecord> {
-  return apiRequest<TenantRecord>(`/tenants/${tenantId}`);
+export function getOwnTenant(): Promise<TenantRecord> {
+  return apiRequest<TenantRecord>("/tenants/me");
 }
 
-export function updateOwnTenant(tenantId: string, input: UpdateTenantInput): Promise<TenantRecord> {
-  return apiRequest<TenantRecord>(`/tenants/${tenantId}`, { method: "PATCH", body: input });
+export function updateOwnTenant(input: UpdateTenantInput): Promise<TenantRecord> {
+  return apiRequest<TenantRecord>("/tenants/me", { method: "PATCH", body: input });
 }

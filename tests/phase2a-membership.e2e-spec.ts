@@ -393,4 +393,111 @@ describe('Phase 2A — Global Identity & Membership (e2e)', () => {
       expect(membershipsFromA.every((m) => m.tenantId === tenantA.id)).toBe(true);
     });
   });
+
+  describe('Phase 2UI.4: GET /memberships — tenant-wide membership read', () => {
+    it("lists memberships across every organization in the caller's tenant, with organization/user identity joined in", async () => {
+      const admin = await createGlobalUser(`tw-admin-${suffix}@example.com`);
+      await addMembership(tenantA.id, orgA.id, admin.id, 'ACTIVE');
+      await grantRole(tenantA.id, admin.id, tenantAdminRoleId);
+      const adminTokens = await loginOk(tenantA.tenantCode, admin.email);
+
+      const memberInA2 = await createGlobalUser(`tw-member-a2-${suffix}@example.com`);
+      await addMembership(tenantA.id, orgA2.id, memberInA2.id, 'ACTIVE');
+
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/memberships')
+        .set('Authorization', `Bearer ${adminTokens.accessToken}`);
+      expect(res.status).toBe(200);
+      const items = res.body.items ?? res.body.data ?? res.body;
+      const userIds = items.map((m: { user: { id: string } }) => m.user.id);
+      // Spans BOTH orgA and orgA2 in one call — the point of the tenant-wide
+      // endpoint vs the existing per-organization /organizations/:id/members.
+      expect(userIds).toEqual(expect.arrayContaining([admin.id, memberInA2.id]));
+      const a2Row = items.find((m: { user: { id: string } }) => m.user.id === memberInA2.id);
+      expect(a2Row.organization.id).toBe(orgA2.id);
+      expect(a2Row.organization.organizationName).toBe('Org A2');
+      // Never a password/credential field on the joined user.
+      expect(a2Row.user).not.toHaveProperty('passwordHash');
+    });
+
+    it('filters by organizationId, userId, and status', async () => {
+      const admin = await createGlobalUser(`tw-filt-admin-${suffix}@example.com`);
+      await addMembership(tenantA.id, orgA.id, admin.id, 'ACTIVE');
+      await grantRole(tenantA.id, admin.id, tenantAdminRoleId);
+      const adminTokens = await loginOk(tenantA.tenantCode, admin.email);
+
+      const invited = await createGlobalUser(`tw-filt-invited-${suffix}@example.com`, { withPassword: false });
+      await addMembership(tenantA.id, orgA.id, invited.id, 'INVITED');
+
+      const byOrg = await request(app.getHttpServer())
+        .get(`/api/v1/memberships?organizationId=${orgA2.id}`)
+        .set('Authorization', `Bearer ${adminTokens.accessToken}`);
+      expect(byOrg.status).toBe(200);
+      const byOrgItems = byOrg.body.items ?? byOrg.body.data ?? byOrg.body;
+      expect(byOrgItems.every((m: { organization: { id: string } }) => m.organization.id === orgA2.id)).toBe(true);
+
+      const byUser = await request(app.getHttpServer())
+        .get(`/api/v1/memberships?userId=${invited.id}`)
+        .set('Authorization', `Bearer ${adminTokens.accessToken}`);
+      expect(byUser.status).toBe(200);
+      const byUserItems = byUser.body.items ?? byUser.body.data ?? byUser.body;
+      expect(byUserItems).toHaveLength(1);
+      expect(byUserItems[0].user.id).toBe(invited.id);
+
+      const byStatus = await request(app.getHttpServer())
+        .get('/api/v1/memberships?status=INVITED')
+        .set('Authorization', `Bearer ${adminTokens.accessToken}`);
+      expect(byStatus.status).toBe(200);
+      const byStatusItems = byStatus.body.items ?? byStatus.body.data ?? byStatus.body;
+      expect(byStatusItems.every((m: { status: string }) => m.status === 'INVITED')).toBe(true);
+      expect(byStatusItems.map((m: { user: { id: string } }) => m.user.id)).toContain(invited.id);
+    });
+
+    it('requires USER_VIEW — a member with no tenant-wide grant is denied', async () => {
+      const member = await createGlobalUser(`tw-noperm-${suffix}@example.com`);
+      await addMembership(tenantA.id, orgA.id, member.id, 'ACTIVE');
+      await grantRole(tenantA.id, member.id, memberRoleId, orgA.id); // org-scoped MEMBER only, not tenant-wide
+      const memberTokens = await loginOk(tenantA.tenantCode, member.email);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/v1/memberships')
+        .set('Authorization', `Bearer ${memberTokens.accessToken}`);
+      expect(res.status).toBe(403);
+    });
+
+    it('is denied entirely without a valid session', async () => {
+      const res = await request(app.getHttpServer()).get('/api/v1/memberships');
+      expect(res.status).toBe(401);
+    });
+
+    it("a foreign-tenant organizationId 404s rather than leaking cross-tenant membership rows", async () => {
+      const admin = await createGlobalUser(`tw-cross-admin-${suffix}@example.com`);
+      await addMembership(tenantA.id, orgA.id, admin.id, 'ACTIVE');
+      await grantRole(tenantA.id, admin.id, tenantAdminRoleId);
+      const adminTokens = await loginOk(tenantA.tenantCode, admin.email);
+
+      const res = await request(app.getHttpServer())
+        .get(`/api/v1/memberships?organizationId=${orgB.id}`)
+        .set('Authorization', `Bearer ${adminTokens.accessToken}`);
+      expect(res.status).toBe(404);
+    });
+
+    it("a foreign-tenant userId returns zero rows, not another tenant's membership data (tenantId is always ANDed server-side, never client-controlled)", async () => {
+      const admin = await createGlobalUser(`tw-cross-user-admin-${suffix}@example.com`);
+      await addMembership(tenantA.id, orgA.id, admin.id, 'ACTIVE');
+      await grantRole(tenantA.id, admin.id, tenantAdminRoleId);
+      const adminTokens = await loginOk(tenantA.tenantCode, admin.email);
+
+      // A user who exists only in Tenant B.
+      const tenantBOnlyUser = await createGlobalUser(`tw-cross-user-victim-${suffix}@example.com`);
+      await addMembership(tenantB.id, orgB.id, tenantBOnlyUser.id, 'ACTIVE');
+
+      const res = await request(app.getHttpServer())
+        .get(`/api/v1/memberships?userId=${tenantBOnlyUser.id}`)
+        .set('Authorization', `Bearer ${adminTokens.accessToken}`);
+      expect(res.status).toBe(200);
+      const items = res.body.items ?? res.body.data ?? res.body;
+      expect(items).toEqual([]);
+    });
+  });
 });

@@ -35,11 +35,14 @@ export { getApiErrorMessage } from "./getApiErrorMessage";
 export {
   ADMIN_SETTABLE_MEMBERSHIP_STATUSES,
   listMembers,
+  listTenantMemberships,
   updateMembershipStatus,
   type AdminSettableMembershipStatus,
   type Member,
   type MemberUserSummary,
   type MembershipStatus,
+  type TenantMember,
+  type TenantMembershipListParams,
 } from "./memberships";
 export {
   createOrganizationType,

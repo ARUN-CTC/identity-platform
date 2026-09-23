@@ -96,6 +96,50 @@ export class MembershipsRepository {
   }
 
   /**
+   * Phase 2UI.4 — the tenant-wide counterpart to listForOrganization(),
+   * backing the Tenant Admin Console's Memberships/Invitations screens and
+   * User Detail's membership context (see docs/PHASE_2UI4.md). Runs inside
+   * the SAME single-tenant `runInContext(fn, tenantId)` call as
+   * listForOrganization() — unlike listActiveForUser() below, this never
+   * spans multiple tenants in one query, so `organization`'s standard
+   * (unrelaxed) tenant RLS applies correctly and a plain `include` is safe.
+   */
+  async listForTenant(
+    tenantId: string,
+    query: PaginationQueryDto,
+    filters: { organizationId?: string; userId?: string; status?: MembershipStatus },
+  ): Promise<{
+    items: (Membership & {
+      user: { id: string; email: string; firstName: string | null; lastName: string | null; status: string };
+      organization: { id: string; organizationName: string };
+    })[];
+    total: number;
+  }> {
+    const where: Prisma.MembershipWhereInput = {
+      tenantId,
+      ...(filters.organizationId ? { organizationId: filters.organizationId } : {}),
+      ...(filters.userId ? { userId: filters.userId } : {}),
+      ...(filters.status ? { status: filters.status } : {}),
+    };
+    return this.prismaContext.runInContext(async (tx) => {
+      const [items, total] = await Promise.all([
+        tx.membership.findMany({
+          where,
+          skip: query.skip,
+          take: query.take,
+          orderBy: { createdAt: 'desc' },
+          include: {
+            user: { select: { id: true, email: true, firstName: true, lastName: true, status: true } },
+            organization: { select: { id: true, organizationName: true } },
+          },
+        }),
+        tx.membership.count({ where }),
+      ]);
+      return { items, total };
+    }, tenantId);
+  }
+
+  /**
    * PHASE 2C (docs/ORGANIZATION_CONTEXT_ARCHITECTURE.md) — org-context
    * discovery, run BEFORE any tenant is known. Given only an authenticated
    * userId and a client-requested organizationId, finds that user's ACTIVE

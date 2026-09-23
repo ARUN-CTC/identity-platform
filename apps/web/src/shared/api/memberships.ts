@@ -68,3 +68,27 @@ export function updateMembershipStatus(
 ): Promise<Member> {
   return apiRequest<Member>(`${BASE(organizationId)}/${userId}`, { method: "PATCH", body: { status } });
 }
+
+// Mirrors the rows GET /memberships returns — the same Membership shape as
+// Member above, plus the joined Organization (this endpoint spans every
+// organization in the tenant, so the row needs to say which one).
+export interface TenantMember extends Member {
+  organization: { id: string; organizationName: string };
+}
+
+export interface TenantMembershipListParams extends ListParams {
+  organizationId?: string;
+  userId?: string;
+  status?: MembershipStatus;
+}
+
+/**
+ * `GET /memberships` (Phase 2UI.4 addition — src/modules/memberships/controllers/tenant-memberships.controller.ts)
+ * — tenant-wide, read-only, gated on USER_VIEW like listMembers() above.
+ * Status changes still go through updateMembershipStatus() above (always
+ * organization-scoped — a membership is only ever changed in the context of
+ * the one organization it belongs to).
+ */
+export function listTenantMemberships(params: TenantMembershipListParams = {}): Promise<PaginatedResult<TenantMember>> {
+  return apiRequest<PaginatedResult<TenantMember>>("/memberships", { query: params });
+}
